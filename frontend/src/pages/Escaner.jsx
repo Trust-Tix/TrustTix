@@ -8,8 +8,13 @@ import { IconoCheck, IconoEscaner, IconoExterno, IconoX } from '../components/Ic
 import { enlaceTx } from '../stellar/config'
 import { abreviar, fechaHora, folio, leerFolio } from '../utils/formato'
 
+// Un mismo QR frente a la cámara se ignora hasta que pase este tiempo sin verlo,
+// para que el boleto recién registrado no se vuelva a leer como "ya utilizado".
+const PAUSA_MISMO_QR = 4000
+
 // Escáner de la puerta: lee el QR con la cámara (o el número escrito),
 // consulta el boleto en el contrato y registra la entrada con una firma.
+// La cámara se queda abierta y lee un boleto tras otro, como en una fila.
 export default function Escaner() {
   const { eventoId } = useParams()
   const id = Number(eventoId)
@@ -23,14 +28,16 @@ export default function Escaner() {
   const [camara, setCamara] = useState(false)
   const [errorCamara, setErrorCamara] = useState('')
   const video = useRef(null)
-  const lector = useRef(null)
   const resultado = useRef(null)
+  const ocupado = useRef(false)
+  const ultimo = useRef({ valor: '', hora: 0 })
+  const alLeer = useRef(() => {})
 
   const evento = eventos.find((ev) => ev.id === id)
 
   // Al leer un boleto, el resultado se desplaza a la vista para que el personal lo vea sin deslizar.
   useEffect(() => {
-    if (lectura) resultado.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (lectura) resultado.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [lectura])
 
   useEffect(() => {
@@ -45,7 +52,8 @@ export default function Escaner() {
   const escanear = useCallback(
     async (valor) => {
       const boletoId = leerFolio(valor)
-      if (!boletoId) return
+      if (!boletoId || ocupado.current) return
+      ocupado.current = true
       setCodigo(folio(boletoId))
       setConsultando(true)
       setLectura(null)
@@ -59,22 +67,37 @@ export default function Escaner() {
         setLectura({ tipo: 'error', id: boletoId, mensaje: e.message })
       }
       setConsultando(false)
+      ocupado.current = false
     },
     [consultarBoleto, id],
   )
 
-  // Cámara: se enciende con el botón y se apaga al leer un código.
+  // Mientras se consulta o se firma una entrada, la cámara no interrumpe con otro boleto.
+  useEffect(() => {
+    alLeer.current = (valor) => {
+      const ahora = Date.now()
+      if (ocupado.current) {
+        // El boleto que se está atendiendo sigue frente a la cámara: no cuenta como lectura nueva.
+        if (valor === ultimo.current.valor) ultimo.current.hora = ahora
+        return
+      }
+      const repetido = valor === ultimo.current.valor && ahora - ultimo.current.hora < PAUSA_MISMO_QR
+      ultimo.current = { valor, hora: ahora }
+      if (repetido) return
+      navigator.vibrate?.(60)
+      escanear(valor)
+    }
+  }, [escanear])
+
+  // Cámara: se enciende con el botón y sigue leyendo hasta que se apaga.
   useEffect(() => {
     if (!camara || !video.current) return undefined
-    const escaner = new QrScanner(
-      video.current,
-      (resultado) => {
-        setCamara(false)
-        escanear(resultado.data)
-      },
-      { returnDetailedScanResult: true, preferredCamera: 'environment', highlightScanRegion: false, maxScansPerSecond: 8 },
-    )
-    lector.current = escaner
+    const escaner = new QrScanner(video.current, ({ data }) => alLeer.current(data), {
+      returnDetailedScanResult: true,
+      preferredCamera: 'environment',
+      highlightScanRegion: false,
+      maxScansPerSecond: 8,
+    })
     escaner.start().catch((e) => {
       setErrorCamara(`No pudimos abrir la cámara: ${e?.message ?? e}`)
       setCamara(false)
@@ -82,11 +105,11 @@ export default function Escaner() {
     return () => {
       escaner.stop()
       escaner.destroy()
-      lector.current = null
     }
-  }, [camara, escanear])
+  }, [camara])
 
   const entrar = async () => {
+    ocupado.current = true
     setRegistrando(true)
     try {
       const hash = await registrarEntrada(lectura.id)
@@ -95,6 +118,7 @@ export default function Escaner() {
       setLectura((l) => ({ ...l, tipo: /utilizado/.test(e.message) ? 'usado' : 'error', mensaje: e.message }))
     }
     setRegistrando(false)
+    ocupado.current = false
   }
 
   if (!evento) {
@@ -135,6 +159,7 @@ export default function Escaner() {
         <button type="button" className="boton boton--contorno" onClick={() => { setErrorCamara(''); setCamara((c) => !c) }}>
           <IconoEscaner width={18} height={18} /> {camara ? 'Apagar cámara' : 'Escanear con la cámara'}
         </button>
+        {camara && <p className="nota nota--centro">La cámara sigue abierta: acerca el siguiente boleto cuando termines con este.</p>}
         {errorCamara && <p className="alerta alerta--error">{errorCamara}</p>}
 
         <form

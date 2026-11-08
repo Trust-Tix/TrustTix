@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import QrScanner from 'qr-scanner'
 import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
@@ -9,6 +9,9 @@ import { IconoEscaner, IconoExterno } from '../components/Iconos'
 import { enlaceTx } from '../stellar/config'
 import { abreviar, direccionValida, fechaLarga, numero, precio } from '../utils/formato'
 import { DOMINIO, urlPortal } from '../portal'
+import Portada from '../components/Portada'
+import { supabaseListo } from '../supabase'
+import { ANCHO_MINIMO, prepararImagen } from '../utils/imagen'
 
 const CUENTA = /G[A-Z2-7]{55}/
 
@@ -16,7 +19,9 @@ const CUENTA = /G[A-Z2-7]{55}/
 export default function AdminEvento() {
   const { id } = useParams()
   const eventoId = Number(id)
-  const { eventos, billetera, cargando, personal, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento } = useApp()
+  const { eventos, billetera, cargando, personal, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, cambiarPortada } = useApp()
+  const { state } = useLocation()
+  const [portada, setPortada] = useState({ subiendo: false, error: '' })
   const [boletos, setBoletos] = useState(null)
   const [confirmadas, setConfirmadas] = useState({})
   const [cuenta, setCuenta] = useState('')
@@ -117,6 +122,21 @@ export default function AdminEvento() {
     setEnviando(null)
   }
 
+  const elegirPortada = async (e) => {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo) return
+    setPortada({ subiendo: true, error: '' })
+    try {
+      const { blob, vista } = await prepararImagen(archivo)
+      URL.revokeObjectURL(vista)
+      await cambiarPortada(eventoId, blob)
+      setPortada({ subiendo: false, error: '' })
+    } catch (err) {
+      setPortada({ subiendo: false, error: err.message })
+    }
+  }
+
   const usados = boletos?.filter((b) => b.estado === 'usado').length
   const ingresos = BigInt(evento.vendidos) * evento.precio
 
@@ -124,6 +144,7 @@ export default function AdminEvento() {
     <>
       <Encabezado titulo={evento.titulo} atras />
       <p className="introduccion">{fechaLarga(evento)}. {evento.recinto}.</p>
+      {state?.aviso && <p className="alerta alerta--error" role="status">{state.aviso}</p>}
 
       {!billetera ? (
         <div className="vacio vacio--caja">
@@ -151,6 +172,26 @@ export default function AdminEvento() {
             </dl>
             {evento.precio > 0n && <p className="nota">En esta versión cada pago llega a tu cuenta en el momento de la compra.</p>}
           </section>
+
+          {supabaseListo && (
+            <section className="tarjeta">
+              <h3 className="tarjeta__titulo">Portada</h3>
+              <Portada evento={evento} />
+              <label className={`boton boton--contorno ${portada.subiendo ? 'boton--apagado' : ''}`}>
+                {portada.subiendo ? 'Subiendo…' : evento.imagen ? 'Cambiar imagen' : 'Subir imagen'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif"
+                  onChange={elegirPortada}
+                  disabled={portada.subiendo}
+                  className="sr-only"
+                />
+              </label>
+              <p className={portada.error ? 'alerta alerta--error' : 'nota'}>
+                {portada.error || `Horizontal, de al menos ${ANCHO_MINIMO} px de ancho.`}
+              </p>
+            </section>
+          )}
 
           <section className="tarjeta">
             <h3 className="tarjeta__titulo">Personal de acceso</h3>
@@ -222,7 +263,7 @@ export default function AdminEvento() {
       )}
 
       <section className="menu">
-        <a href={urlPortal('publico', `/eventos/${evento.id}`)} className="menu__opcion">
+        <a href={urlPortal('app',`/eventos/${evento.id}`)} className="menu__opcion">
           <IconoExterno />
           <span><strong>Página del evento</strong><small>Lo que ven los compradores</small></span>
         </a>

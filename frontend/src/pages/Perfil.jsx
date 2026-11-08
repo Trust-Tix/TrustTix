@@ -9,16 +9,16 @@ import { PORTAL, urlPortal } from '../portal'
 
 // Accesos a los otros portales; cada uno abre su propio subdominio.
 const MENU = {
-  publico: [
-    { portal: 'admin', ruta: '/organizador', Icono: IconoCalendario, titulo: 'Panel del organizador', texto: 'Crea eventos y asigna al personal de acceso' },
+  app: [
+    { portal: 'organizer', ruta: '/organizador', Icono: IconoCalendario, titulo: 'Panel del organizador', texto: 'Crea eventos y asigna al personal de acceso' },
     { portal: 'staff', ruta: '/acceso', Icono: IconoEscaner, titulo: 'App de acceso', texto: 'Escanea boletos en la puerta' },
   ],
-  admin: [
-    { portal: 'publico', ruta: '/inicio', Icono: IconoInicio, titulo: 'Ir a TrustTix', texto: 'Mira tus eventos como los ven los compradores' },
+  organizer: [
+    { portal: 'app', ruta: '/inicio', Icono: IconoInicio, titulo: 'Ir a TrustTix', texto: 'Mira tus eventos como los ven los compradores' },
     { portal: 'staff', ruta: '/acceso', Icono: IconoEscaner, titulo: 'App de acceso', texto: 'Escanea boletos en la puerta' },
   ],
   staff: [
-    { portal: 'publico', ruta: '/inicio', Icono: IconoInicio, titulo: 'Ir a TrustTix', texto: 'Compra y consulta boletos' },
+    { portal: 'app', ruta: '/inicio', Icono: IconoInicio, titulo: 'Ir a TrustTix', texto: 'Compra y consulta boletos' },
   ],
 }
 
@@ -48,7 +48,7 @@ export default function Perfil() {
           <>
             <p className="mono rompe">{billetera}</p>
             <p className="nota">
-              Freighter, Stellar Testnet{PORTAL === 'publico' && `, ${misBoletos.length} boleto(s)`}
+              Freighter, Stellar Testnet{PORTAL === 'app' &&`, ${misBoletos.length} boleto(s)`}
             </p>
             <a className="enlace enlace--externo" href={enlaceCuenta(billetera)} target="_blank" rel="noreferrer">
               Ver mi cuenta en stellar.expert <IconoExterno width={12} height={12} />
@@ -58,7 +58,7 @@ export default function Perfil() {
         ) : (
           <>
             <p className="nota">
-              {PORTAL === 'admin'
+              {PORTAL === 'organizer'
                 ? 'Conecta Freighter (en Testnet) con la cuenta con la que organizas tus eventos.'
                 : PORTAL === 'staff'
                   ? 'Conecta Freighter (en Testnet) con la cuenta que el organizador va a autorizar.'

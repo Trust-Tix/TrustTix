@@ -1,11 +1,14 @@
 import { useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useApp } from './context/AppContext'
-import { PORTAL, urlPortal } from './portal'
+import { PORTAL, subdominioViejo, urlPortal } from './portal'
 import Navegacion from './components/Navegacion'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Inicio from './pages/Inicio'
 import DetalleEvento from './pages/DetalleEvento'
+import Lugares from './pages/Lugares'
+import Lugar from './pages/Lugar'
 import MisBoletos from './pages/MisBoletos'
 import DetalleBoleto from './pages/DetalleBoleto'
 import Transferir from './pages/Transferir'
@@ -23,7 +26,7 @@ function Plantilla() {
     window.scrollTo(0, 0)
   }, [pathname])
   return (
-    <div className="plantilla">
+    <div className={`plantilla ${PORTAL === 'app' ? 'plantilla--tienda' : ''}`}>
       <Navegacion />
       <main className="contenido">
         <Outlet />
@@ -39,7 +42,7 @@ function ConSesion({ children }) {
   return children
 }
 
-// Las rutas viejas del organizador y del personal ahora viven en su propio portal.
+// Manda la misma ruta al portal que le corresponde (enlaces viejos o de otro sitio).
 function IrAPortal({ portal }) {
   const { pathname } = useLocation()
   useEffect(() => {
@@ -48,10 +51,10 @@ function IrAPortal({ portal }) {
   return null
 }
 
-const INICIO = { publico: '/inicio', admin: '/organizador', staff: '/acceso' }
+const INICIO = { app: '/inicio', organizer: '/organizador', staff: '/acceso' }
 
 function rutas() {
-  if (PORTAL === 'admin') {
+  if (PORTAL === 'organizer') {
     return (
       <>
         <Route path="/organizador" element={<ConSesion><Organizador /></ConSesion>} />
@@ -72,10 +75,12 @@ function rutas() {
   }
   return (
     <>
-      {/* La verificación es pública: cualquiera puede consultar un boleto. */}
+      {/* Los eventos y la verificación se ven sin cuenta; comprar y guardar boletos la piden. */}
+      <Route path="/inicio" element={<Inicio />} />
+      <Route path="/eventos/:id" element={<DetalleEvento />} />
+      <Route path="/lugares" element={<Lugares />} />
+      <Route path="/lugares/:clave" element={<Lugar />} />
       <Route path="/verificar" element={<Verificar />} />
-      <Route path="/inicio" element={<ConSesion><Inicio /></ConSesion>} />
-      <Route path="/eventos/:id" element={<ConSesion><DetalleEvento /></ConSesion>} />
       <Route path="/boletos" element={<ConSesion><MisBoletos /></ConSesion>} />
       <Route path="/boletos/:id" element={<ConSesion><DetalleBoleto /></ConSesion>} />
       <Route path="/boletos/:id/transferir" element={<ConSesion><Transferir /></ConSesion>} />
@@ -85,12 +90,32 @@ function rutas() {
 }
 
 export default function App() {
+  if (subdominioViejo()) {
+    return (
+      <Routes>
+        <Route path="*" element={<IrAPortal portal="organizer" />} />
+      </Routes>
+    )
+  }
+
+  if (PORTAL === 'landing') {
+    return (
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/organizador/*" element={<IrAPortal portal="organizer" />} />
+        <Route path="/acceso/*" element={<IrAPortal portal="staff" />} />
+        {/* Antes la app vivía en la raíz: sus rutas siguen llevando a app. */}
+        <Route path="*" element={<IrAPortal portal="app" />} />
+      </Routes>
+    )
+  }
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<Plantilla />}>{rutas()}</Route>
-      {PORTAL === 'publico' && <Route path="/organizador/*" element={<IrAPortal portal="admin" />} />}
-      {PORTAL === 'publico' && <Route path="/acceso/*" element={<IrAPortal portal="staff" />} />}
+      {PORTAL === 'app' && <Route path="/organizador/*" element={<IrAPortal portal="organizer" />} />}
+      {PORTAL === 'app' && <Route path="/acceso/*" element={<IrAPortal portal="staff" />} />}
       <Route path="*" element={<Navigate to={INICIO[PORTAL]} replace />} />
     </Routes>
   )

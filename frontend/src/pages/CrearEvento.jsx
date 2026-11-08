@@ -7,6 +7,8 @@ import BotonBilletera from '../components/BotonBilletera'
 import useUbicacion from '../hooks/useUbicacion'
 import { aStroops } from '../utils/formato'
 import { buscarLugar, mapaEmbebido } from '../utils/mapas'
+import { ANCHO_MINIMO, prepararImagen } from '../utils/imagen'
+import { supabaseListo } from '../supabase'
 
 const VACIO = {
   titulo: '',
@@ -19,6 +21,7 @@ const VACIO = {
   capacidad: '',
   precioXLM: '',
   descripcion: '',
+  organizadorNombre: '',
 }
 
 export default function CrearEvento() {
@@ -31,6 +34,24 @@ export default function CrearEvento() {
   const [errorMapa, setErrorMapa] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
+  const [imagen, setImagen] = useState(null)
+  const [errorImagen, setErrorImagen] = useState('')
+
+  const elegirImagen = async (e) => {
+    const archivo = e.target.files?.[0]
+    if (!archivo) return
+    setErrorImagen('')
+    try {
+      const lista = await prepararImagen(archivo)
+      setImagen((anterior) => {
+        if (anterior) URL.revokeObjectURL(anterior.vista)
+        return lista
+      })
+    } catch (err) {
+      setErrorImagen(err.message)
+      e.target.value = ''
+    }
+  }
 
   // La ciudad se propone con la ubicación del organizador, sin pisar lo que ya escribió.
   useEffect(() => {
@@ -83,8 +104,14 @@ export default function CrearEvento() {
     setEnviando(true)
     try {
       const coordenadas = punto ?? (await ubicar().catch(() => null))
-      const { id } = await crearEvento({ ...datos, capacidad, precio: aStroops(precioXLM), coordenadas })
-      navigate(`/organizador/${id}`)
+      const { id, aviso } = await crearEvento({
+        ...datos,
+        capacidad,
+        precio: aStroops(precioXLM),
+        coordenadas,
+        imagen: imagen?.blob,
+      })
+      navigate(`/organizador/${id}`, { state: { aviso } })
     } catch (err) {
       setError(err.message)
       setEnviando(false)
@@ -105,6 +132,23 @@ export default function CrearEvento() {
           <label className="campo">
             <span>Nombre del evento</span>
             <input required value={datos.titulo} onChange={cambiar('titulo')} placeholder="Ej. Noche de rock" />
+          </label>
+          {supabaseListo && (
+            <div className="campo">
+              <span>Portada</span>
+              {imagen && <img className="portada-previa" src={imagen.vista} alt="Vista previa de la portada" />}
+              <label className="boton boton--contorno">
+                {imagen ? 'Cambiar imagen' : 'Elegir imagen'}
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={elegirImagen} className="sr-only" />
+              </label>
+              <p className="nota">
+                {errorImagen || `Horizontal, de al menos ${ANCHO_MINIMO} px de ancho. Se guarda optimizada para que no se pixelee.`}
+              </p>
+            </div>
+          )}
+          <label className="campo">
+            <span>Organiza (opcional)</span>
+            <input value={datos.organizadorNombre} onChange={cambiar('organizadorNombre')} placeholder="Ej. Producciones Morelos" />
           </label>
           <div className="campo-doble">
             <label className="campo">
@@ -172,8 +216,10 @@ export default function CrearEvento() {
             </span>
           </p>
           <p className="nota">
-            En el contrato quedan el nombre, el recinto, la fecha, la capacidad y el precio. La categoría, la dirección y la descripción
-            se guardan en este navegador.
+            En el contrato quedan el nombre, el recinto, la fecha, la capacidad y el precio.{' '}
+            {supabaseListo
+              ? 'La portada, la categoría, la dirección y la descripción se guardan en la base de datos de TrustTix.'
+              : 'La categoría, la dirección y la descripción se guardan en este navegador.'}
           </p>
 
           {error && <p className="alerta alerta--error" role="alert">{error}</p>}

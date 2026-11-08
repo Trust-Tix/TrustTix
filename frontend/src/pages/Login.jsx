@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Logo from '../components/Logo'
 import { mostrarBotonGoogle } from '../auth/google'
 import { PORTAL } from '../portal'
 
 const LEMAS = {
-  publico: ['TU ACCESO', 'AL MUNDO'],
-  admin: ['PANEL DE', 'ORGANIZADORES'],
+  app: ['TU ACCESO', 'AL MUNDO'],
+  organizer: ['PANEL DE', 'ORGANIZADORES'],
   staff: ['PERSONAL', 'DE ACCESO'],
 }
 
@@ -21,8 +21,8 @@ export default function Login() {
 
   useEffect(() => {
     if (usuario || !contenedor.current) return
-    mostrarBotonGoogle(contenedor.current, (perfil) => {
-      iniciarSesion(perfil)
+    mostrarBotonGoogle(contenedor.current, (perfil, token) => {
+      iniciarSesion(perfil, token)
       navigate(destino, { replace: true })
     }).catch((e) => setError(e.message))
   }, [usuario, iniciarSesion, navigate, destino])
@@ -46,6 +46,7 @@ export default function Login() {
         <p className="login__nota">
           Tu cuenta de Google solo identifica tu sesión. Para comprar, crear eventos o registrar entradas firmas con tu billetera.
         </p>
+        {PORTAL === 'app' && <Link to="/inicio" className="enlace login__seguir">Ver eventos sin cuenta</Link>}
       </div>
     </main>
   )

@@ -12,11 +12,12 @@ import { enlaceCuenta } from '../stellar/config'
 import useUbicacion from '../hooks/useUbicacion'
 import useCoordenadas from '../hooks/useCoordenadas'
 import { comoLlegar, distanciaKm, mapaEmbebido, textoDistancia } from '../utils/mapas'
+import { claveLugar } from '../utils/lugares'
 
 export default function DetalleEvento() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { eventos, billetera, misBoletos, comprar, cargando } = useApp()
+  const { eventos, usuario, billetera, misBoletos, comprar, cargando } = useApp()
   const [confirmando, setConfirmando] = useState(false)
   const [firmando, setFirmando] = useState(false)
   const [error, setError] = useState('')
@@ -66,6 +67,12 @@ export default function DetalleEvento() {
     accion = <Link to={`/boletos/${miBoleto.id}`} className="boton boton--claro">Ver mi boleto</Link>
   } else if (agotado) {
     accion = <span className="boton boton--apagado" aria-disabled="true">Agotado</span>
+  } else if (!usuario) {
+    accion = (
+      <Link to="/login" state={{ desde: `/eventos/${evento.id}` }} className="boton boton--claro">
+        Inicia sesión para comprar
+      </Link>
+    )
   } else if (!billetera) {
     accion = <BotonBilletera grande />
   } else {
@@ -103,7 +110,9 @@ export default function DetalleEvento() {
                 </a>
               )}
               <div>
-                <p className="detalle__recinto">{evento.recinto}</p>
+                <p className="detalle__recinto">
+                  <Link to={`/lugares/${claveLugar(evento)}`}>{evento.recinto}</Link>
+                </p>
                 <p className="detalle__direccion">{evento.direccion}</p>
                 {km != null && <p className="nota">{textoDistancia(km)} de tu ubicación</p>}
                 <a href={punto ? comoLlegar(punto) : mapa} target="_blank" rel="noreferrer" className="enlace">

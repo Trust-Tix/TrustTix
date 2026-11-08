@@ -36,7 +36,8 @@ function leerToken(credencial) {
   return JSON.parse(new TextDecoder().decode(bytes))
 }
 
-// Dibuja el botón de Google dentro de `contenedor` y llama a `callback` con el perfil.
+// Dibuja el botón de Google dentro de `contenedor` y llama a `callback` con el
+// perfil y el token, que también abre la sesión de Supabase.
 export async function mostrarBotonGoogle(contenedor, callback) {
   if (!GOOGLE_CLIENT_ID) throw new Error('Falta configurar VITE_GOOGLE_CLIENT_ID para iniciar sesión con Google.')
   const google = await cargarGoogle()
@@ -47,7 +48,7 @@ export async function mostrarBotonGoogle(contenedor, callback) {
       ux_mode: 'popup',
       callback: ({ credential }) => {
         const datos = leerToken(credential)
-        alEntrar({ id: datos.sub, nombre: datos.name ?? datos.email, correo: datos.email, foto: datos.picture ?? null })
+        alEntrar({ id: datos.sub, nombre: datos.name ?? datos.email, correo: datos.email, foto: datos.picture ?? null }, credential)
       },
     })
     iniciado = true

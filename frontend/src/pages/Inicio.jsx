@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext'
 import { CATEGORIAS } from '../data/eventos'
 import Encabezado from '../components/Encabezado'
 import TarjetaEvento from '../components/TarjetaEvento'
+import Destacados from '../components/Destacados'
 import { IconoBuscar, IconoUbicacion } from '../components/Iconos'
 import useUbicacion from '../hooks/useUbicacion'
 import useCoordenadas from '../hooks/useCoordenadas'
@@ -44,7 +45,9 @@ export default function Inicio() {
 
   return (
     <>
-      <Encabezado titulo="Inicio" />
+      <Encabezado titulo="Inicio" portada />
+
+      <Destacados eventos={eventos} />
 
       <section className="seccion">
         <h2 className="subtitulo">{ubicacion ? 'Eventos cerca de ti' : 'Principales eventos'}</h2>

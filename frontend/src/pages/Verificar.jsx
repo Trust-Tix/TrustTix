@@ -26,7 +26,7 @@ export default function Verificar() {
 
   return (
     <>
-      <Encabezado titulo="Verificar" billetera={Boolean(usuario)} />
+      <Encabezado titulo="Verificar" />
       <p className="introduccion">
         ¿Vas a comprar un boleto en reventa? Antes de pagar, confirma en la red quién es el dueño y si ya fue usado.
       </p>

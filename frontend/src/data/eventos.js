@@ -1,70 +1,11 @@
-// Datos descriptivos de los eventos (imagen, categoría, dirección, texto y
-// coordenadas del recinto). Lo que define la validez de un boleto vive en el
-// contrato: organizador, nombre, recinto, fecha, capacidad, vendidos y precio.
-// Aquí solo se guarda lo que no hace falta en la red, enlazado por el número
-// de evento que asignó el contrato.
+// Valores fijos de la app. Los datos descriptivos de cada evento (imagen,
+// categoría, dirección, texto y coordenadas) viven en Supabase; los del
+// catálogo de ejemplo están en supabase/semilla.
 
 export const CATEGORIAS = ['Todos', 'Eventos', 'Conciertos', 'Teatro']
 
 // Cuenta de ejemplo para probar transferencias.
 export const CUENTA_EJEMPLO = 'GA34IJVLXRTUB2B4WKVDCWEO44UNUTBXVPMCK6UWIKJZL2PEQXBCSTHL'
-
-export const metadatos = {
-  1: {
-    imagen: '/eventos/CaifanesBanner.jpg',
-    categoria: 'Conciertos',
-    ciudad: 'Cuernavaca, Mor.',
-    direccion: 'Calle Río Balsas 22, Vista Hermosa, 62290 Cuernavaca, Mor.',
-    lat: 18.93041,
-    lng: -99.22339,
-    organizadorNombre: 'Teopanzolco Producciones',
-    descripcion:
-      'Caifanes regresa a Cuernavaca con un recorrido por sus discos clásicos. Acceso general, puertas abren a las 20:00.',
-  },
-  2: {
-    imagen: '/eventos/AWSBanner.webp',
-    categoria: 'Eventos',
-    ciudad: 'Ciudad de México',
-    direccion: 'Av. del Conscripto 311, Lomas de Sotelo, Hipódromo de las Américas, Miguel Hidalgo, 11610 Ciudad de México, CDMX',
-    lat: 19.44027,
-    lng: -99.22407,
-    organizadorNombre: 'Amazon Web Services',
-    descripcion: 'Un día completo de conferencias, talleres y demostraciones sobre nube, datos e inteligencia artificial.',
-  },
-  3: {
-    imagen: '/eventos/GoyaHackBanner.jpg',
-    categoria: 'Eventos',
-    ciudad: 'Ciudad de México',
-    direccion: 'Av. Universidad 3000, Ciudad Universitaria, Coyoacán, 04510 Ciudad de México, CDMX',
-    lat: 19.32293,
-    lng: -99.18849,
-    organizadorNombre: 'Stellar x BAF',
-    fechaFin: '2026-09-26',
-    descripcion: 'Hackathon de seis días para construir sobre Stellar. Mentorías, premios y networking con el ecosistema.',
-  },
-  4: {
-    imagen: '/eventos/BrunoMarsBanner.jpg',
-    categoria: 'Conciertos',
-    ciudad: 'Ciudad de México',
-    direccion: 'Viaducto Río de la Piedad s/n, Granjas México, Iztacalco, 08400 Ciudad de México, CDMX',
-    lat: 19.40502,
-    lng: -99.09557,
-    organizadorNombre: 'Live Nation México',
-    descripcion:
-      'Bruno Mars regresa a la Ciudad de México con The Romantic Tour. Invitado especial: Anderson .Paak como DJ Pee.Wee.',
-  },
-  5: {
-    imagen: '/eventos/ReyLeonBanner.avif',
-    categoria: 'Teatro',
-    ciudad: 'Ciudad de México',
-    direccion: 'Lago Zurich 245, Ampliación Granada, Miguel Hidalgo, 11529 Ciudad de México, CDMX',
-    lat: 19.44094,
-    lng: -99.20389,
-    organizadorNombre: 'OCESA Teatro',
-    descripcion:
-      'La producción de Disney llega al Teatro Telcel con vestuario, música y escenografía de Broadway.',
-  },
-}
 
 // Portada genérica para eventos sin imagen (por ejemplo, los que se crean desde la app).
 export const portadaGenerica = (titulo) => ({

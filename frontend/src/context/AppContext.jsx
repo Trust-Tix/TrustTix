@@ -1,14 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { metadatos, portadaGenerica } from '../data/eventos'
+import { portadaGenerica } from '../data/eventos'
 import * as red from '../stellar/contrato'
 import { conectar, reconectar } from '../stellar/billetera'
 import { salirDeGoogle } from '../auth/google'
+import { entrarConGoogle, guardarMetadatos, leerMetadatos, salirDeSupabase, subirImagen, supabaseListo } from '../supabase'
 
 // Estado de la app. Todo lo que define la validez de un boleto (eventos,
 // capacidad, vendidos, dueños y entradas) se lee del contrato TrustTix en
-// Testnet. En el navegador solo se guardan la sesión de Google, los datos
-// descriptivos de eventos creados aquí, el personal autorizado desde aquí y
-// los enlaces a las transacciones hechas desde aquí.
+// Testnet. Los datos descriptivos de cada evento (imagen, categoría, dirección,
+// descripción) se leen de Supabase. En el navegador solo se guardan la sesión
+// de Google, el personal autorizado desde aquí, los enlaces a las transacciones
+// hechas desde aquí y, si Supabase no está configurado, los datos de los
+// eventos creados aquí.
 
 // Cambia junto con el contrato: los números de evento y boleto de otro
 // contrato no corresponden a los de este.
@@ -24,8 +27,8 @@ function cargarLocal() {
 }
 
 // Une lo que viene de la red con los datos descriptivos.
-function armarEvento(id, enRed, metaLocal) {
-  const meta = metadatos[id] ?? metaLocal[id] ?? {}
+function armarEvento(id, enRed, datos) {
+  const meta = datos[id] ?? {}
   const [fecha, hora = '00:00'] = enRed.fecha.split('T')
   return {
     id,
@@ -63,6 +66,7 @@ export function AppProvider({ children }) {
   const inicial = cargarLocal()
   const [usuario, setUsuario] = useState(inicial.usuario ?? null)
   const [metaLocal, setMetaLocal] = useState(inicial.metaLocal ?? {})
+  const [metaRemota, setMetaRemota] = useState({})
   const [registro, setRegistro] = useState(inicial.registro ?? {})
   const [personal, setPersonal] = useState(inicial.personal ?? {})
   const [billetera, setBilletera] = useState(null)
@@ -83,11 +87,22 @@ export function AppProvider({ children }) {
     setRegistro((r) => ({ ...r, [boletoId]: [...(r[boletoId] ?? []), { tipo, hash, fecha: new Date().toISOString() }] }))
   }, [])
 
+  // Lo guardado en Supabase manda sobre lo guardado en este navegador.
+  const recargarMetadatos = useCallback(async () => {
+    try {
+      setMetaRemota(await leerMetadatos())
+    } catch (e) {
+      console.warn(e.message)
+    }
+  }, [])
+
+  const metadatos = useMemo(() => ({ ...metaLocal, ...metaRemota }), [metaLocal, metaRemota])
+
   const recargarEventos = useCallback(async () => {
     try {
       const total = await red.totalEventos()
       const lista = await Promise.all(
-        Array.from({ length: total }, (_, i) => i + 1).map(async (id) => armarEvento(id, await red.consultarEvento(id), metaLocal)),
+        Array.from({ length: total }, (_, i) => i + 1).map(async (id) => armarEvento(id, await red.consultarEvento(id), metadatos)),
       )
       setEventos(lista.reverse())
       setErrorRed('')
@@ -96,7 +111,7 @@ export function AppProvider({ children }) {
     } finally {
       setCargando(false)
     }
-  }, [metaLocal])
+  }, [metadatos])
 
   const recargarMisBoletos = useCallback(async (cuenta = billetera) => {
     if (!cuenta) {
@@ -107,6 +122,10 @@ export function AppProvider({ children }) {
     const lista = await Promise.all(ids.map(async (id) => armarBoleto(id, await red.consultarBoleto(id))))
     setMisBoletos(lista.reverse())
   }, [billetera])
+
+  useEffect(() => {
+    recargarMetadatos()
+  }, [recargarMetadatos])
 
   useEffect(() => {
     recargarEventos()
@@ -120,11 +139,17 @@ export function AppProvider({ children }) {
     recargarMisBoletos(billetera).catch(() => {})
   }, [billetera, recargarMisBoletos])
 
-  // perfil: { id, nombre, correo, foto } de la cuenta de Google.
-  const iniciarSesion = useCallback((perfil) => setUsuario(perfil), [])
+  // perfil: { id, nombre, correo, foto } de la cuenta de Google. Con el mismo
+  // token se abre la sesión de Supabase; si falla, la app sigue y solo no se
+  // podrán guardar datos de eventos.
+  const iniciarSesion = useCallback((perfil, token) => {
+    setUsuario(perfil)
+    if (token) entrarConGoogle(token).catch((e) => console.warn(e.message))
+  }, [])
 
   const cerrarSesion = useCallback(() => {
     salirDeGoogle()
+    salirDeSupabase().catch(() => {})
     setUsuario(null)
     setBilletera(null)
   }, [])
@@ -168,14 +193,14 @@ export function AppProvider({ children }) {
         const boleto = armarBoleto(boletoId, await red.consultarBoleto(boletoId))
         const evento =
           eventos.find((ev) => ev.id === boleto.eventoId) ??
-          armarEvento(boleto.eventoId, await red.consultarEvento(boleto.eventoId), metaLocal)
+          armarEvento(boleto.eventoId, await red.consultarEvento(boleto.eventoId), metadatos)
         return { boleto, evento }
       } catch (e) {
         if (/no existe/i.test(e.message)) return null
         throw e
       }
     },
-    [eventos, metaLocal],
+    [eventos, metadatos],
   )
 
   const registrarEntrada = useCallback(
@@ -236,21 +261,45 @@ export function AppProvider({ children }) {
         precio: datos.precio,
       })
       const id = Number(resultado)
-      setMetaLocal((m) => ({
-        ...m,
-        [id]: {
-          categoria: datos.categoria,
-          ciudad: datos.ciudad,
-          direccion: datos.direccion,
-          descripcion: datos.descripcion,
-          lat: datos.coordenadas?.lat,
-          lng: datos.coordenadas?.lng,
-        },
-      }))
+      const meta = {
+        categoria: datos.categoria,
+        ciudad: datos.ciudad,
+        direccion: datos.direccion,
+        descripcion: datos.descripcion,
+        organizadorNombre: datos.organizadorNombre || undefined,
+        lat: datos.coordenadas?.lat,
+        lng: datos.coordenadas?.lng,
+      }
+      // El evento ya existe en la red. Si la base de datos falla, se avisa y
+      // los datos se pueden volver a guardar desde el panel del evento.
+      let aviso = null
+      if (supabaseListo) {
+        try {
+          const imagen = datos.imagen ? await subirImagen(id, datos.imagen) : undefined
+          await guardarMetadatos(id, { ...meta, imagen })
+          await recargarMetadatos()
+        } catch (e) {
+          aviso = `El evento quedó en la red, pero ${e.message.charAt(0).toLowerCase()}${e.message.slice(1)}`
+          setMetaLocal((m) => ({ ...m, [id]: meta }))
+        }
+      } else {
+        setMetaLocal((m) => ({ ...m, [id]: meta }))
+      }
       await recargarEventos()
-      return { id, hash }
+      return { id, hash, aviso }
     },
-    [billetera, recargarEventos],
+    [billetera, recargarMetadatos, recargarEventos],
+  )
+
+  // Cambia la portada de un evento ya creado.
+  const cambiarPortada = useCallback(
+    async (eventoId, imagen) => {
+      if (!supabaseListo) throw new Error('Falta configurar Supabase para guardar imágenes.')
+      const ruta = await subirImagen(eventoId, imagen)
+      await guardarMetadatos(eventoId, { imagen: ruta })
+      await recargarMetadatos()
+    },
+    [recargarMetadatos],
   )
 
   const valor = useMemo(
@@ -278,8 +327,9 @@ export function AppProvider({ children }) {
       quitarPersonal,
       boletosDeEvento,
       crearEvento,
+      cambiarPortada,
     }),
-    [usuario, billetera, eventos, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento],
+    [usuario, billetera, eventos, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
   )
 
   return <AppContext.Provider value={valor}>{children}</AppContext.Provider>
