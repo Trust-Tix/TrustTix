@@ -3,7 +3,7 @@ import { CONTRATO_ID, RED, RPC_URL } from './config'
 import { firmar } from './billetera'
 
 // Llamadas al contrato TrustTix. Las consultas se simulan contra la red
-// (gratis, sin firma); las acciones se firman con Freighter y se envían.
+// (gratis, sin firma); las acciones se firman con la billetera activa y se envían.
 
 const MENSAJES = {
   1: 'Ese evento no existe en la red.',
@@ -45,7 +45,10 @@ function traducir(error, tx) {
     return new Error('No tienes saldo suficiente en XLM para esta compra.')
   }
   if (/User declined|rejected|cancel/i.test(textos.join(' '))) {
-    return new Error('Cancelaste la firma en Freighter.')
+    return new Error('Cancelaste la firma en tu billetera.')
+  }
+  if (/account not found|Account .* not found|does not exist/i.test(textos.join(' '))) {
+    return new Error('Tu billetera todavía no está activada en Testnet. Actívala con XLM de prueba en la página Billetera.')
   }
   return error instanceof Error ? error : new Error(String(error))
 }

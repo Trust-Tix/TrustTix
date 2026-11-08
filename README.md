@@ -6,7 +6,7 @@
 
 - [Node.js](https://nodejs.org/) 20.19 o superior (incluye npm).
 - Git.
-- La extensión [Freighter](https://www.freighter.app) en Chrome, Edge o Brave, configurada en **Testnet** y con saldo de prueba (botón **Fund with Friendbot** dentro de la extensión).
+- Una billetera de Stellar es opcional: la app crea una billetera TrustTix de Testnet para cada cuenta (ver [Billeteras](#billeteras)). Si prefieres una propia, sirven Varial (antes Freighter), xBull, Albedo, LOBSTR y otras, configuradas en **Testnet**.
 
 **Para el contrato (opcional; ya está desplegado en Testnet):**
 
@@ -39,7 +39,7 @@ npm run dev
 
 Antes de la primera vez, copia `frontend/.env.example` como `frontend/.env.local` y pon el ID de cliente de Google en `VITE_GOOGLE_CLIENT_ID` (ver [Inicio de sesión con Google](#inicio-de-sesión-con-google)).
 
-Abre <http://localhost:5173/?portal=app>, mira los eventos, inicia sesión con Google y conecta Freighter para comprar. El front ya apunta al contrato desplegado en Testnet (`CCWWMLZANZV54WMJQ5JQ6XP2AAUE5BGKK3Q5CPQZEJMREJ4OYRVN36GD`).
+Abre <http://localhost:5173/?portal=app>, mira los eventos, inicia sesión con Google y conecta una billetera para comprar. El front ya apunta al contrato desplegado en Testnet (`CCWWMLZANZV54WMJQ5JQ6XP2AAUE5BGKK3Q5CPQZEJMREJ4OYRVN36GD`).
 
 **Portales:** la misma app se publica en cuatro direcciones.
 
@@ -88,6 +88,19 @@ Para usar esa instancia en el front, agrega `VITE_CONTRATO_ID=<id del contrato>`
 4. Copia el ID de cliente en `VITE_GOOGLE_CLIENT_ID` (en `frontend/.env.local` y en las variables de entorno de Vercel).
 
 La cuenta de Google solo identifica la sesión; los permisos dentro de TrustTix los da la firma de la billetera.
+
+## Billeteras
+
+El módulo de billeteras ([frontend/src/stellar/billetera.js](frontend/src/stellar/billetera.js)) da dos formas de firmar, y el resto de la app firma con la misma función sin saber cuál está activa:
+
+| Tipo | Cómo funciona |
+| --- | --- |
+| **Billetera TrustTix** (recomendada) | Se crea al instante para la cuenta de Google y se activa con Friendbot, que le deposita XLM de prueba. Firma en el navegador, así que funciona en el celular sin instalar nada. Se puede respaldar o importar con su clave secreta. |
+| **Otra billetera** | El selector de [Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit): Varial (antes Freighter), xBull, Albedo, LOBSTR, Hana, Rabet y más. Debe estar en Testnet. |
+
+La página **Billetera** (`/billetera`, en los tres portales) muestra el saldo, recibe con QR, envía XLM (si la cuenta destino no existe, la crea) y lista los movimientos, incluidas las compras de boletos. Las operaciones de cuenta están en [frontend/src/stellar/cuenta.js](frontend/src/stellar/cuenta.js) y usan Horizon de Testnet.
+
+> La billetera TrustTix guarda su llave en el almacenamiento local del navegador. Es suficiente para Testnet, pero no para dinero real: en Mainnet se reemplazaría por una billetera con passkeys o custodia.
 
 ## Base de datos (Supabase)
 

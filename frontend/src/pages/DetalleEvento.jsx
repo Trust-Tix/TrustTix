@@ -4,7 +4,6 @@ import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
 import Portada from '../components/Portada'
 import Disponibilidad from '../components/Disponibilidad'
-import BotonBilletera from '../components/BotonBilletera'
 import Modal from '../components/Modal'
 import { IconoCalendario, IconoEscudo, IconoUbicacion } from '../components/Iconos'
 import { abreviar, diaMes, fechaLarga, numero, precio } from '../utils/formato'
@@ -14,10 +13,12 @@ import useCoordenadas from '../hooks/useCoordenadas'
 import { comoLlegar, distanciaKm, mapaEmbebido, textoDistancia } from '../utils/mapas'
 import { claveLugar } from '../utils/lugares'
 
+const xlmTexto = (n) => `${n.toLocaleString('es-MX', { maximumFractionDigits: 2 })} XLM`
+
 export default function DetalleEvento() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { eventos, usuario, billetera, misBoletos, comprar, cargando } = useApp()
+  const { eventos, usuario, billetera, infoBilletera, saldo, misBoletos, comprar, cargando } = useApp()
   const [confirmando, setConfirmando] = useState(false)
   const [firmando, setFirmando] = useState(false)
   const [error, setError] = useState('')
@@ -50,6 +51,10 @@ export default function DetalleEvento() {
   const punto = coordenadasDe(evento)
   const km = ubicacion && punto ? distanciaKm(ubicacion, punto) : null
 
+  const precioXLM = Number(evento.precio) / 1e7
+  const saldoActual = typeof saldo === 'string' ? Number(saldo) : null
+  const sinSaldo = saldoActual != null && saldoActual < precioXLM
+
   const confirmarCompra = async () => {
     setError('')
     setFirmando(true)
@@ -73,9 +78,8 @@ export default function DetalleEvento() {
         Inicia sesión para comprar
       </Link>
     )
-  } else if (!billetera) {
-    accion = <BotonBilletera grande />
   } else {
+    // Sin billetera también se compra: la billetera TrustTix se prepara al confirmar.
     accion = (
       <button type="button" className="boton boton--claro" onClick={() => setConfirmando(true)}>
         {evento.precio === 0n ? 'Obtener boleto' : 'Comprar boleto'}
@@ -93,10 +97,12 @@ export default function DetalleEvento() {
             <Portada evento={evento} alta />
           </div>
 
-          <section className="detalle__bloque detalle__acerca">
-            <h3 className="detalle__subtitulo">Acerca del evento</h3>
-            <p className="detalle__descripcion">{evento.descripcion}</p>
-          </section>
+          {evento.descripcion && (
+            <section className="detalle__bloque detalle__acerca">
+              <h3 className="detalle__subtitulo">Acerca del evento</h3>
+              <p className="detalle__descripcion">{evento.descripcion}</p>
+            </section>
+          )}
 
           <section className="detalle__bloque detalle__ubicacion">
             <h3 className="detalle__subtitulo">Ubicación</h3>
@@ -128,7 +134,7 @@ export default function DetalleEvento() {
             <span className="etiqueta-categoria">{evento.categoria}</span>
             <h2 className="detalle__titulo">{evento.titulo}</h2>
             <p className="meta meta--grande">
-              <IconoUbicacion width={16} height={16} /> {evento.recinto} · {evento.ciudad}
+              <IconoUbicacion width={16} height={16} /> {[evento.recinto, evento.ciudad].filter(Boolean).join(' · ')}
             </p>
           </header>
 
@@ -175,24 +181,32 @@ export default function DetalleEvento() {
       </article>
 
       {confirmando && (
-        <Modal titulo="Confirma en tu billetera" onCerrar={() => !firmando && setConfirmando(false)}>
+        <Modal titulo={evento.precio === 0n ? 'Confirma tu boleto' : 'Confirma tu compra'} onCerrar={() => !firmando && setConfirmando(false)}>
           <dl className="resumen">
             <div><dt>Evento</dt><dd>{evento.titulo}</dd></div>
-            <div><dt>Boletos</dt><dd>1</dd></div>
             <div><dt>Total</dt><dd>{precio(evento.precio)}</dd></div>
-            <div><dt>Desde</dt><dd className="mono">{abreviar(billetera)}</dd></div>
-            <div><dt>Red</dt><dd>Stellar Testnet</dd></div>
+            <div>
+              <dt>Paga</dt>
+              <dd>{billetera ? `${infoBilletera?.nombre ?? 'Tu billetera'} (${abreviar(billetera)})` : 'Billetera TrustTix, se crea al confirmar'}</dd>
+            </div>
+            {saldoActual != null && (
+              <div><dt>Saldo después</dt><dd>{xlmTexto(saldoActual - precioXLM)}</dd></div>
+            )}
           </dl>
           <p className="nota">
-            Freighter te pedirá firmar. El pago y la emisión del boleto ocurren en una sola transacción: si una falla, la otra no sucede.
+            {!billetera || infoBilletera?.tipo === 'trusttix'
+              ? 'Tu billetera TrustTix firma al confirmar, sin ventanas extra.'
+              : `${infoBilletera?.nombre ?? 'Tu billetera'} te pedirá firmar.`}{' '}
+            El pago y el boleto van en una sola transacción de Stellar Testnet: si una parte falla, no se cobra nada.
           </p>
+          {sinSaldo && <p className="alerta alerta--error">Tu saldo no alcanza para este boleto.</p>}
           {error && <p className="alerta alerta--error" role="alert">{error}</p>}
           <div className="modal__acciones">
             <button type="button" className="boton boton--contorno" onClick={() => setConfirmando(false)} disabled={firmando}>
               Cancelar
             </button>
-            <button type="button" className="boton boton--claro" onClick={confirmarCompra} disabled={firmando}>
-              {firmando ? 'Esperando a la red…' : evento.precio === 0n ? 'Firmar' : 'Firmar y pagar'}
+            <button type="button" className="boton boton--claro" onClick={confirmarCompra} disabled={firmando || sinSaldo}>
+              {firmando ? (billetera ? 'Firmando…' : 'Preparando…') : evento.precio === 0n ? 'Confirmar' : 'Pagar'}
             </button>
           </div>
         </Modal>

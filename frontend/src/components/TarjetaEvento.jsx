@@ -64,7 +64,8 @@ export default function TarjetaEvento({ evento, boleto, km = null }) {
             <span className="meta__texto">{fechaCorta(evento)}</span>
           </span>
         </div>
-        <Disponibilidad evento={evento} />
+        {/* A quien ya tiene su boleto no le sirve saber cuántos lugares quedan. */}
+        {!boleto && <Disponibilidad evento={evento} />}
         <div className="tarjeta-evento__pie">
           <span className="precio">
             {boleto ? (

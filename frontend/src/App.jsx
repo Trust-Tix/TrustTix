@@ -14,6 +14,7 @@ import DetalleBoleto from './pages/DetalleBoleto'
 import Transferir from './pages/Transferir'
 import Verificar from './pages/Verificar'
 import Perfil from './pages/Perfil'
+import Billetera from './pages/Billetera'
 import Organizador from './pages/Organizador'
 import CrearEvento from './pages/CrearEvento'
 import AdminEvento from './pages/AdminEvento'
@@ -22,6 +23,7 @@ import Escaner from './pages/Escaner'
 
 function Plantilla() {
   const { pathname } = useLocation()
+  const { avisoBilletera, setAvisoBilletera } = useApp()
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [pathname])
@@ -29,6 +31,12 @@ function Plantilla() {
     <div className={`plantilla ${PORTAL === 'app' ? 'plantilla--tienda' : ''}`}>
       <Navegacion />
       <main className="contenido">
+        {avisoBilletera && (
+          <p className="alerta alerta--exito aviso-flotante" role="status">
+            <span>{avisoBilletera}</span>
+            <button type="button" onClick={() => setAvisoBilletera('')} aria-label="Cerrar aviso">×</button>
+          </p>
+        )}
         <Outlet />
       </main>
     </div>
@@ -60,6 +68,7 @@ function rutas() {
         <Route path="/organizador" element={<ConSesion><Organizador /></ConSesion>} />
         <Route path="/organizador/crear" element={<ConSesion><CrearEvento /></ConSesion>} />
         <Route path="/organizador/:id" element={<ConSesion><AdminEvento /></ConSesion>} />
+        <Route path="/billetera" element={<ConSesion><Billetera /></ConSesion>} />
         <Route path="/perfil" element={<ConSesion><Perfil /></ConSesion>} />
       </>
     )
@@ -69,6 +78,7 @@ function rutas() {
       <>
         <Route path="/acceso" element={<ConSesion><Acceso /></ConSesion>} />
         <Route path="/acceso/:eventoId" element={<ConSesion><Escaner /></ConSesion>} />
+        <Route path="/billetera" element={<ConSesion><Billetera /></ConSesion>} />
         <Route path="/perfil" element={<ConSesion><Perfil /></ConSesion>} />
       </>
     )
@@ -84,6 +94,7 @@ function rutas() {
       <Route path="/boletos" element={<ConSesion><MisBoletos /></ConSesion>} />
       <Route path="/boletos/:id" element={<ConSesion><DetalleBoleto /></ConSesion>} />
       <Route path="/boletos/:id/transferir" element={<ConSesion><Transferir /></ConSesion>} />
+      <Route path="/billetera" element={<ConSesion><Billetera /></ConSesion>} />
       <Route path="/perfil" element={<ConSesion><Perfil /></ConSesion>} />
     </>
   )

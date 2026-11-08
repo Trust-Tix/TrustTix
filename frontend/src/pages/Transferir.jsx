@@ -6,6 +6,7 @@ import { CUENTA_EJEMPLO } from '../data/eventos'
 import { enlaceTx } from '../stellar/config'
 import Encabezado from '../components/Encabezado'
 import { IconoCheck, IconoExterno } from '../components/Iconos'
+import EscanerCuenta from '../components/EscanerCuenta'
 import { abreviar, direccionValida, folio } from '../utils/formato'
 
 export default function Transferir() {
@@ -101,6 +102,7 @@ export default function Transferir() {
             disabled={!puede}
           />
         </label>
+        <EscanerCuenta texto="Escanear el QR de su billetera" alLeer={setDestino} deshabilitado={!puede} />
         <button type="button" className="enlace" onClick={() => setDestino(CUENTA_EJEMPLO)} disabled={!puede}>
           Usar una cuenta de ejemplo
         </button>

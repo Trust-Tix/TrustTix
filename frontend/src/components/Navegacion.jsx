@@ -2,24 +2,28 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Logo from './Logo'
 import BotonBilletera from './BotonBilletera'
-import { IconoBoleto, IconoCalendario, IconoEscaner, IconoEscudo, IconoInicio, IconoMas, IconoPerfil, IconoUbicacion } from './Iconos'
+import { IconoBilletera, IconoBoleto, IconoCalendario, IconoEscaner, IconoEscudo, IconoInicio, IconoMas, IconoPerfil, IconoUbicacion } from './Iconos'
 import { NOMBRE_PORTAL, PORTAL } from '../portal'
 
+// `escritorio`: solo en la barra superior; en celular se llega desde Perfil.
 const ENLACES = {
   app: [
     { a: '/inicio', texto: 'Inicio', Icono: IconoInicio },
     { a: '/lugares', texto: 'Lugares', Icono: IconoUbicacion },
     { a: '/boletos', texto: 'Mis boletos', Icono: IconoBoleto },
-    { a: '/verificar', texto: 'Verificar', Icono: IconoEscudo },
+    { a: '/verificar', texto: 'Verificar', Icono: IconoEscudo, escritorio: true },
+    { a: '/billetera', texto: 'Billetera', Icono: IconoBilletera },
     { a: '/perfil', texto: 'Perfil', Icono: IconoPerfil },
   ],
   organizer: [
     { a: '/organizador', texto: 'Mis eventos', Icono: IconoCalendario, exacto: true },
     { a: '/organizador/crear', texto: 'Crear evento', Icono: IconoMas },
+    { a: '/billetera', texto: 'Billetera', Icono: IconoBilletera },
     { a: '/perfil', texto: 'Perfil', Icono: IconoPerfil },
   ],
   staff: [
     { a: '/acceso', texto: 'Eventos', Icono: IconoEscaner },
+    { a: '/billetera', texto: 'Billetera', Icono: IconoBilletera },
     { a: '/perfil', texto: 'Mi cuenta', Icono: IconoPerfil },
   ],
 }
@@ -44,13 +48,13 @@ export default function Navegacion() {
           {!tienda && <small>{NOMBRE_PORTAL[PORTAL]}</small>}
         </span>
       </Link>
-      {enlaces.map(({ a, texto, Icono, exacto }) => (
+      {enlaces.map(({ a, texto, Icono, exacto, escritorio }) => (
         <NavLink
           key={a}
           to={a}
           end={exacto}
           state={a === '/login' ? { desde: pathname } : undefined}
-          className={`navegacion__enlace ${tienda && (a === '/perfil' || a === '/login') ? 'navegacion__enlace--celular' : ''}`}
+          className={`navegacion__enlace ${tienda && (a === '/perfil' || a === '/login') ? 'navegacion__enlace--celular' : ''} ${escritorio ? 'navegacion__enlace--escritorio' : ''}`}
         >
           <Icono width={22} height={22} />
           <span>{texto}</span>
