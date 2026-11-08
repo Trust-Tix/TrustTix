@@ -1,7 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { portadaGenerica } from '../data/eventos'
 import * as red from '../stellar/contrato'
-import { conectar, reconectar } from '../stellar/billetera'
+import {
+  conectarExterna,
+  desconectar,
+  eligioOtraBilletera,
+  importarBilleteraPropia,
+  reconectar,
+  usarBilleteraPropia,
+} from '../stellar/billetera'
+import { activarConFriendbot, saldoXLM } from '../stellar/cuenta'
 import { salirDeGoogle } from '../auth/google'
 import { entrarConGoogle, guardarMetadatos, leerMetadatos, salirDeSupabase, subirImagen, supabaseListo } from '../supabase'
 
@@ -70,6 +78,12 @@ export function AppProvider({ children }) {
   const [registro, setRegistro] = useState(inicial.registro ?? {})
   const [personal, setPersonal] = useState(inicial.personal ?? {})
   const [billetera, setBilletera] = useState(null)
+  // { tipo: 'trusttix' | 'externa' | 'demo', nombre } de la billetera conectada.
+  const [infoBilletera, setInfoBilletera] = useState(null)
+  const [saldo, setSaldo] = useState(undefined)
+  // Mientras se crea y activa la billetera TrustTix, y el aviso de que quedó lista.
+  const [preparando, setPreparando] = useState(false)
+  const [avisoBilletera, setAvisoBilletera] = useState('')
   const [eventos, setEventos] = useState([])
   const [misBoletos, setMisBoletos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -131,13 +145,34 @@ export function AppProvider({ children }) {
     recargarEventos()
   }, [recargarEventos])
 
-  useEffect(() => {
-    reconectar().then((cuenta) => cuenta && setBilletera(cuenta))
+  const ponerBilletera = useCallback((b) => {
+    setBilletera(b?.direccion ?? null)
+    setInfoBilletera(b ? { tipo: b.tipo, nombre: b.nombre } : null)
   }, [])
+
+  const usuarioId = usuario?.id
+
+  // Saldo en XLM de la billetera conectada: texto, null si la cuenta aún no
+  // existe en la red, undefined mientras se lee.
+  const recargarSaldo = useCallback(async (cuenta = billetera) => {
+    if (!cuenta) {
+      setSaldo(undefined)
+      return undefined
+    }
+    try {
+      const s = await saldoXLM(cuenta)
+      setSaldo(s)
+      return s
+    } catch {
+      return undefined
+    }
+  }, [billetera])
 
   useEffect(() => {
     recargarMisBoletos(billetera).catch(() => {})
-  }, [billetera, recargarMisBoletos])
+    setSaldo(undefined)
+    recargarSaldo(billetera)
+  }, [billetera, recargarMisBoletos, recargarSaldo])
 
   // perfil: { id, nombre, correo, foto } de la cuenta de Google. Con el mismo
   // token se abre la sesión de Supabase; si falla, la app sigue y solo no se
@@ -150,29 +185,90 @@ export function AppProvider({ children }) {
   const cerrarSesion = useCallback(() => {
     salirDeGoogle()
     salirDeSupabase().catch(() => {})
+    desconectar({ manual: false }).catch(() => {})
     setUsuario(null)
-    setBilletera(null)
-  }, [])
+    ponerBilletera(null)
+  }, [ponerBilletera])
 
-  const conectarBilletera = useCallback(async () => {
-    const cuenta = await conectar()
-    setBilletera(cuenta)
+  // tipo 'trusttix': la billetera integrada de la cuenta de Google (se crea y
+  // se activa con Friendbot la primera vez). tipo 'externa': el selector de
+  // Stellar Wallets Kit.
+  const conectarBilletera = useCallback(
+    async (tipo = 'externa') => {
+      let b
+      if (tipo === 'trusttix') {
+        b = await usarBilleteraPropia(usuarioId)
+        if (b.nueva) {
+          setPreparando(true)
+          // Si Friendbot falla, la billetera queda conectada sin saldo y se
+          // activa al comprar o desde la página Billetera.
+          const activada = await activarConFriendbot(b.direccion).then(() => true, () => false)
+          setPreparando(false)
+          if (activada) setAvisoBilletera('Creamos tu billetera TrustTix con 10,000 XLM de prueba. Ya puedes comprar.')
+        }
+      } else {
+        b = await conectarExterna()
+      }
+      ponerBilletera(b)
+      return b.direccion
+    },
+    [usuarioId, ponerBilletera],
+  )
+
+  // Al entrar, recupera la billetera de la última vez. Si la persona nunca eligió
+  // otra, abre (o crea) su billetera TrustTix sin pedirle nada.
+  useEffect(() => {
+    let vigente = true
+    reconectar(usuarioId).then((b) => {
+      if (!vigente) return
+      if (b) ponerBilletera(b)
+      else if (usuarioId && !eligioOtraBilletera()) conectarBilletera('trusttix').catch(() => {})
+    })
+    return () => {
+      vigente = false
+    }
+    // conectarBilletera cambia con usuarioId; basta con reaccionar a la cuenta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuarioId, ponerBilletera])
+
+  // Billetera lista para firmar y con saldo: la conectada, o la TrustTix si no hay.
+  const prepararBilletera = useCallback(async () => {
+    const cuenta = billetera ?? (await conectarBilletera('trusttix'))
+    if (saldo == null && (await recargarSaldo(cuenta)) === null) {
+      await activarConFriendbot(cuenta)
+      await recargarSaldo(cuenta)
+    }
     return cuenta
-  }, [])
+  }, [billetera, saldo, conectarBilletera, recargarSaldo])
 
-  const desconectarBilletera = useCallback(() => setBilletera(null), [])
+  const importarBilletera = useCallback(
+    async (secreta) => {
+      const b = importarBilleteraPropia(usuarioId, secreta)
+      ponerBilletera(b)
+      return b.direccion
+    },
+    [usuarioId, ponerBilletera],
+  )
 
-  // comprar: cobra en XLM y emite el boleto en una sola transacción.
+  const desconectarBilletera = useCallback(async () => {
+    await desconectar()
+    ponerBilletera(null)
+  }, [ponerBilletera])
+
+  // comprar: cobra en XLM y emite el boleto en una sola transacción. Si no hay
+  // billetera, prepara la TrustTix en el mismo paso.
   const comprar = useCallback(
     async (eventoId) => {
-      if (!billetera) throw new Error('Conecta tu billetera para comprar.')
-      const { resultado, hash } = await red.comprar(billetera, eventoId)
+      if (!usuarioId && !billetera) throw new Error('Inicia sesión para comprar.')
+      const cuenta = await prepararBilletera()
+      const { resultado, hash } = await red.comprar(cuenta, eventoId)
       const boletoId = Number(resultado)
       anotar(boletoId, 'compra', hash)
-      await Promise.all([recargarEventos(), recargarMisBoletos()])
+      // El boleto ya existe en la red; lo demás se actualiza mientras se muestra.
+      Promise.all([recargarEventos(), recargarMisBoletos(cuenta), recargarSaldo(cuenta)]).catch(() => {})
       return { boletoId, hash }
     },
-    [billetera, anotar, recargarEventos, recargarMisBoletos],
+    [usuarioId, billetera, prepararBilletera, anotar, recargarEventos, recargarMisBoletos, recargarSaldo],
   )
 
   const transferir = useCallback(
@@ -180,10 +276,10 @@ export function AppProvider({ children }) {
       if (!billetera) throw new Error('Conecta tu billetera.')
       const { hash } = await red.transferir(billetera, boletoId, destino)
       anotar(boletoId, 'transferencia', hash)
-      await recargarMisBoletos()
+      Promise.all([recargarMisBoletos(), recargarSaldo()]).catch(() => {})
       return hash
     },
-    [billetera, anotar, recargarMisBoletos],
+    [billetera, anotar, recargarMisBoletos, recargarSaldo],
   )
 
   // consultar_boleto: lectura pública, no requiere billetera.
@@ -306,6 +402,13 @@ export function AppProvider({ children }) {
     () => ({
       usuario,
       billetera,
+      infoBilletera,
+      importarBilletera,
+      saldo,
+      recargarSaldo,
+      preparando,
+      avisoBilletera,
+      setAvisoBilletera,
       eventos,
       misBoletos,
       registro,
@@ -329,7 +432,7 @@ export function AppProvider({ children }) {
       crearEvento,
       cambiarPortada,
     }),
-    [usuario, billetera, eventos, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
+    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
   )
 
   return <AppContext.Provider value={valor}>{children}</AppContext.Provider>

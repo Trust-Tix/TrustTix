@@ -1,10 +1,11 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
 import BotonBilletera from '../components/BotonBilletera'
 import CodigoCuenta from '../components/CodigoCuenta'
-import { IconoCalendario, IconoEscaner, IconoExterno, IconoInicio } from '../components/Iconos'
-import { enlaceContrato, enlaceCuenta } from '../stellar/config'
+import { IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
+import { enlaceContrato } from '../stellar/config'
+import { abreviar } from '../utils/formato'
 import { PORTAL, urlPortal } from '../portal'
 
 // Accesos a los otros portales; cada uno abre su propio subdominio.
@@ -23,7 +24,7 @@ const MENU = {
 }
 
 export default function Perfil() {
-  const { usuario, billetera, misBoletos, desconectarBilletera, cerrarSesion } = useApp()
+  const { usuario, billetera, infoBilletera, saldo, misBoletos, cerrarSesion } = useApp()
   const navigate = useNavigate()
 
   return (
@@ -46,23 +47,23 @@ export default function Perfil() {
         <h3 className="tarjeta__titulo">Billetera</h3>
         {billetera ? (
           <>
-            <p className="mono rompe">{billetera}</p>
-            <p className="nota">
-              Freighter, Stellar Testnet{PORTAL === 'app' &&`, ${misBoletos.length} boleto(s)`}
+            <p className="saldo__monto saldo__monto--chico">
+              {typeof saldo === 'string' ? `${Number(saldo).toLocaleString('es-MX', { maximumFractionDigits: 2 })} XLM` : '…'}
             </p>
-            <a className="enlace enlace--externo" href={enlaceCuenta(billetera)} target="_blank" rel="noreferrer">
-              Ver mi cuenta en stellar.expert <IconoExterno width={12} height={12} />
-            </a>
-            <button type="button" className="boton boton--contorno" onClick={desconectarBilletera}>Desconectar</button>
+            <p className="nota">
+              {infoBilletera?.nombre ?? 'Billetera'} <span className="mono">{abreviar(billetera)}</span>
+              {PORTAL === 'app' && `, ${misBoletos.length === 1 ? '1 boleto' : `${misBoletos.length} boletos`}`}
+            </p>
+            <Link to="/billetera" className="boton boton--claro">Abrir billetera</Link>
           </>
         ) : (
           <>
             <p className="nota">
               {PORTAL === 'organizer'
-                ? 'Conecta Freighter (en Testnet) con la cuenta con la que organizas tus eventos.'
+                ? 'Conecta la billetera con la que organizas tus eventos. Puedes usar la billetera TrustTix o una propia, en Testnet.'
                 : PORTAL === 'staff'
-                  ? 'Conecta Freighter (en Testnet) con la cuenta que el organizador va a autorizar.'
-                  : 'Conecta Freighter (en Testnet) para comprar, ver y transferir boletos.'}
+                  ? 'Conecta la billetera que el organizador va a autorizar. Puedes usar la billetera TrustTix o una propia, en Testnet.'
+                  : 'Conecta una billetera para comprar, ver y transferir boletos. La billetera TrustTix se crea al instante, en Testnet.'}
             </p>
             <BotonBilletera grande />
           </>
@@ -78,6 +79,12 @@ export default function Perfil() {
       )}
 
       <section className="menu">
+        {PORTAL === 'app' && (
+          <Link to="/verificar" className="menu__opcion">
+            <IconoEscudo />
+            <span><strong>Verificar un boleto</strong><small>Consulta en la red quién es el dueño antes de comprar en reventa</small></span>
+          </Link>
+        )}
         {MENU[PORTAL].map(({ portal, ruta, Icono, titulo, texto }) => (
           <a key={portal} href={urlPortal(portal, ruta)} className="menu__opcion">
             <Icono />

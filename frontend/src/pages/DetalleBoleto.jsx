@@ -18,7 +18,7 @@ export default function DetalleBoleto() {
   if (cargando && !datos) {
     return (
       <>
-        <Encabezado titulo="Detalle del boleto" atras />
+        <Encabezado titulo="Tu boleto" atras />
         <p className="vacio">Leyendo el boleto desde Stellar…</p>
       </>
     )
@@ -27,7 +27,7 @@ export default function DetalleBoleto() {
   if (!datos) {
     return (
       <>
-        <Encabezado titulo="Detalle del boleto" atras />
+        <Encabezado titulo="Tu boleto" atras />
         <p className="vacio">{error || 'No encontramos este boleto en la red.'} <Link to="/boletos">Ir a mis boletos</Link></p>
       </>
     )
@@ -40,7 +40,7 @@ export default function DetalleBoleto() {
 
   return (
     <>
-      <Encabezado titulo="Detalle del boleto" atras />
+      <Encabezado titulo="Tu boleto" atras />
 
       {state?.recienComprado && (
         <p className="alerta alerta--exito" role="status">

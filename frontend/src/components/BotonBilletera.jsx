@@ -1,52 +1,64 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { abreviar } from '../utils/formato'
 import { IconoBilletera } from './Iconos'
+import Modal from './Modal'
+import ElegirBilletera from './ElegirBilletera'
 
-// Botón de conexión con Freighter.
+const formatoSaldo = (texto) => `${Number(texto).toLocaleString('es-MX', { maximumFractionDigits: 2 })} XLM`
+
+// Botón de billetera. Conectada, muestra el saldo y lleva a la página
+// Billetera; sin conectar, abre el selector de billeteras.
 export default function BotonBilletera({ grande = false }) {
-  const { billetera, conectarBilletera } = useApp()
-  const [conectando, setConectando] = useState(false)
+  const { billetera, infoBilletera, saldo, preparando } = useApp()
+  const [eligiendo, setEligiendo] = useState(false)
   const [error, setError] = useState('')
 
-  if (billetera) {
+  if (preparando && !billetera) {
     return (
-      <span className={`billetera billetera--conectada ${grande ? 'billetera--grande' : ''}`} title={billetera}>
-        <span className="billetera__punto" aria-hidden="true" />
-        {abreviar(billetera)}
+      <span className={`billetera ${grande ? 'boton boton--apagado boton--bloque' : ''}`} role="status">
+        <IconoBilletera width={16} height={16} /> Preparando tu billetera…
       </span>
     )
   }
 
-  const conectar = async () => {
-    setError('')
-    setConectando(true)
-    try {
-      await conectarBilletera()
-    } catch (e) {
-      if (grande) setError(e.message)
-      else window.alert(e.message)
-    }
-    setConectando(false)
+  if (billetera) {
+    return (
+      <Link
+        to="/billetera"
+        className={`billetera billetera--conectada ${grande ? 'billetera--grande' : ''}`}
+        title={`${infoBilletera?.nombre ?? 'Billetera'}: ${billetera}`}
+      >
+        <span className="billetera__punto" aria-hidden="true" />
+        {typeof saldo === 'string' ? formatoSaldo(saldo) : abreviar(billetera)}
+      </Link>
+    )
   }
 
-  const boton = (
-    <button
-      type="button"
-      className={`billetera ${grande ? 'boton boton--claro boton--bloque' : ''}`}
-      onClick={conectar}
-      disabled={conectando}
-    >
-      <IconoBilletera width={16} height={16} />
-      {conectando ? 'Conectando…' : grande ? 'Conectar billetera Freighter' : 'Conectar'}
-    </button>
-  )
-
-  if (!grande) return boton
   return (
-    <div className="billetera-bloque">
-      {boton}
-      {error && <p className="alerta alerta--error" role="alert">{error}</p>}
+    <div className={grande ? 'billetera-bloque' : undefined}>
+      <button
+        type="button"
+        className={`billetera ${grande ? 'boton boton--claro boton--bloque' : ''}`}
+        onClick={() => {
+          setError('')
+          setEligiendo(true)
+        }}
+      >
+        <IconoBilletera width={16} height={16} />
+        {grande ? 'Conectar billetera' : 'Conectar'}
+      </button>
+      {grande && error && <p className="alerta alerta--error" role="alert">{error}</p>}
+      {eligiendo && (
+        <Modal titulo="Elige tu billetera" onCerrar={() => setEligiendo(false)}>
+          <ElegirBilletera
+            alConectar={() => setEligiendo(false)}
+            antesDeExterna={() => setEligiendo(false)}
+            alFallar={(mensaje) => (grande ? setError(mensaje) : window.alert(mensaje))}
+          />
+        </Modal>
+      )}
     </div>
   )
 }
