@@ -35,6 +35,13 @@ export async function haySesion() {
   return Boolean(data?.user)
 }
 
+// Total de billeteras TrustTix creadas (para la landing), o null si no se puede leer.
+export async function totalBilleteras() {
+  if (!cliente) return null
+  const { data, error } = await cliente.rpc('total_billeteras')
+  return error ? null : Number(data)
+}
+
 // La billetera guardada en la cuenta, o null si la cuenta todavía no tiene.
 export async function leerBilleteraDeCuenta() {
   const { data, error } = await cliente.from('billeteras').select('direccion, secreta').maybeSingle()

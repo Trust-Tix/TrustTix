@@ -233,7 +233,7 @@ export default function AdminEvento() {
                 {aviso.texto}{' '}
                 {aviso.hash && (
                   <a className="enlace enlace--externo" href={enlaceTx(aviso.hash)} target="_blank" rel="noreferrer">
-                    Ver la transacción <IconoExterno width={12} height={12} />
+                    Ver comprobante <IconoExterno width={12} height={12} />
                   </a>
                 )}
               </p>

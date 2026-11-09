@@ -60,10 +60,10 @@ export default function Perfil() {
           <>
             <p className="nota">
               {PORTAL === 'organizer'
-                ? 'Conecta la billetera con la que organizas tus eventos. Puedes usar la billetera TrustTix o una propia, en Testnet.'
+                ? 'Conecta la billetera con la que organizas tus eventos. Puedes usar la billetera TrustTix o una propia.'
                 : PORTAL === 'staff'
-                  ? 'Conecta la billetera que el organizador va a autorizar. Puedes usar la billetera TrustTix o una propia, en Testnet.'
-                  : 'Conecta una billetera para comprar, ver y transferir boletos. La billetera TrustTix se crea al instante, en Testnet.'}
+                  ? 'Conecta la billetera que el organizador va a autorizar. Puedes usar la billetera TrustTix o una propia.'
+                  : 'Conecta una billetera para comprar, ver y transferir boletos. La billetera TrustTix se crea al instante.'}
             </p>
             <BotonBilletera grande />
           </>

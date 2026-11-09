@@ -98,7 +98,7 @@ export default function Inicio() {
 
       {errorRed && <p className="alerta alerta--error">{errorRed}</p>}
       {cargando ? (
-        <p className="vacio">Leyendo eventos desde Stellar Testnet…</p>
+        <p className="vacio">Cargando eventos…</p>
       ) : visibles.length > 0 ? (
         <div className="rejilla">
           {visibles.map(({ evento, km }) => (

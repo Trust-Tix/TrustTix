@@ -182,7 +182,7 @@ export default function CrearEvento() {
             {punto && (
               <iframe className="mapa mapa--marco" title="Ubicación del evento" src={mapaEmbebido(punto)} loading="lazy" />
             )}
-            {punto && <p className="nota">Si el punto no es el correcto, ajusta la dirección antes de firmar.</p>}
+            {punto && <p className="nota">Si el punto no es el correcto, ajusta la dirección antes de crear el evento.</p>}
             {errorMapa && <p className="nota">{errorMapa}</p>}
           </div>
           <div className="campo-doble">
@@ -225,7 +225,7 @@ export default function CrearEvento() {
           {error && <p className="alerta alerta--error" role="alert">{error}</p>}
 
           <button type="submit" className="boton boton--claro boton--bloque" disabled={enviando}>
-            {enviando ? 'Esperando a la red…' : 'Firmar y crear evento'}
+            {enviando ? 'Creando evento…' : 'Crear evento'}
           </button>
         </form>
       )}

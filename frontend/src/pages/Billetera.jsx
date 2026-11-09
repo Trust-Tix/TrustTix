@@ -94,7 +94,7 @@ export default function Billetera() {
       <>
         <Encabezado titulo="Billetera" billetera={false} />
         <p className="introduccion">
-          Con una billetera compras boletos, los transfieres y firmas entradas. Todo ocurre en Stellar Testnet, con XLM de prueba.
+          Con tu billetera compras boletos y los compartes. Por ahora todo funciona con saldo de prueba, sin dinero real.
         </p>
         <section className="tarjeta">
           <ElegirBilletera />
@@ -134,7 +134,7 @@ export default function Billetera() {
       <section className="tarjeta saldo">
         <div className="saldo__cabecera">
           <span className="etiqueta-categoria">{infoBilletera?.nombre ?? 'Billetera'}</span>
-          <span className="estado-red">Stellar Testnet</span>
+          <span className="estado-red">Modo de prueba</span>
         </div>
         <p className="saldo__monto">
           {saldo === undefined ? '…' : saldo === null ? 'Sin activar' : `${formatoXLM(saldo)} XLM`}
@@ -143,16 +143,16 @@ export default function Billetera() {
         <div className="saldo__acciones">
           {saldo === null && (
             <button type="button" className="boton boton--claro" onClick={activar} disabled={activando}>
-              {activando ? 'Activando…' : 'Activar con XLM de prueba'}
+              {activando ? 'Activando…' : 'Recibir saldo de prueba'}
             </button>
           )}
           <button type="button" className="boton boton--contorno boton--chico" onClick={cargar}>Actualizar</button>
           <a className="enlace enlace--externo" href={enlaceCuenta(billetera)} target="_blank" rel="noreferrer">
-            Ver en stellar.expert <IconoExterno width={12} height={12} />
+            Ver comprobante público <IconoExterno width={12} height={12} />
           </a>
         </div>
         {saldo === null && (
-          <p className="nota">La cuenta todavía no existe en la red. Friendbot, el servicio de Testnet, la crea y le deposita XLM de prueba.</p>
+          <p className="nota">Tu billetera todavía no tiene saldo. Te damos 10,000 XLM de prueba para que empieces.</p>
         )}
         {error && <p className="alerta alerta--error">{error}</p>}
       </section>
@@ -191,7 +191,7 @@ export default function Billetera() {
               />
             </label>
             <button type="submit" className="boton boton--claro" disabled={enviando || !envio.destino.trim() || !envio.monto || saldo === null}>
-              {enviando ? (integrada ? 'Enviando…' : 'Firma en tu billetera…') : 'Enviar'}
+              {enviando ? (integrada ? 'Enviando…' : 'Confirma en tu billetera…') : 'Enviar'}
             </button>
           </form>
           {aviso && (
@@ -199,7 +199,7 @@ export default function Billetera() {
               {aviso.texto}{' '}
               {aviso.hash && (
                 <a className="enlace enlace--externo" href={enlaceTx(aviso.hash)} target="_blank" rel="noreferrer">
-                  Ver la transacción <IconoExterno width={12} height={12} />
+                  Ver comprobante <IconoExterno width={12} height={12} />
                 </a>
               )}
             </p>

@@ -1,13 +1,36 @@
+import { useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
 import Logo from '../components/Logo'
 import { urlPortal } from '../portal'
+import { totalBoletos } from '../stellar/contrato'
+import { enlaceContrato } from '../stellar/config'
+import { totalBilleteras } from '../supabase'
+import { numero } from '../utils/formato'
 
-const REPOSITORIO = 'https://github.com/DanielRosalesAlanis/TrustTix'
+const REPOSITORIO = 'https://github.com/Trust-Tix/TrustTix'
 
 // Página de trusttix.xyz: el negocio en pocas líneas. Las apps viven en sus subdominios.
 export default function Landing() {
   const { eventos } = useApp()
   const cinta = eventos.filter((ev) => ev.imagen)
+  const [cifras, setCifras] = useState({ billeteras: null, boletos: null })
+
+  // Tracción en vivo: billeteras de la base de datos y boletos leídos del contrato.
+  useEffect(() => {
+    let vigente = true
+    Promise.all([totalBilleteras().catch(() => null), totalBoletos().catch(() => null)]).then(
+      ([billeteras, boletos]) => vigente && setCifras({ billeteras, boletos }),
+    )
+    return () => {
+      vigente = false
+    }
+  }, [])
+
+  const datos = [
+    { valor: cifras.billeteras, texto: 'billeteras creadas' },
+    { valor: cifras.boletos, texto: 'boletos emitidos' },
+    { valor: eventos.length || null, texto: 'eventos publicados' },
+  ].filter((d) => d.valor != null)
 
   return (
     <div className="landing">
@@ -51,6 +74,21 @@ export default function Landing() {
             Cada boleto tiene un dueño. <span>Uno solo.</span>
           </p>
         </section>
+
+        {datos.length > 0 && (
+          <section className="landing__cifras" aria-label="TrustTix en vivo">
+            <p className="landing__rotulo">En vivo, en Stellar Testnet</p>
+            <dl>
+              {datos.map((d) => (
+                <div key={d.texto}>
+                  <dt>{d.texto}</dt>
+                  <dd>{numero(d.valor)}</dd>
+                </div>
+              ))}
+            </dl>
+            <a href={enlaceContrato()} target="_blank" rel="noreferrer" className="landing__flecha">Verificar en la red</a>
+          </section>
+        )}
 
         <section id="organizadores" className="landing__lados">
           <div className="landing__lado">

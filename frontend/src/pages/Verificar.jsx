@@ -92,7 +92,7 @@ export default function Verificar() {
               : 'Si compras en reventa, pide que te lo transfieran a tu cuenta y vuelve a verificar: el dueño debe cambiar a tu dirección.'}
           </p>
           <a className="enlace enlace--externo" href={enlaceContrato()} target="_blank" rel="noreferrer">
-            Dato leído del contrato TrustTix en Stellar Testnet <IconoExterno width={12} height={12} />
+            Dato leído del registro público de TrustTix <IconoExterno width={12} height={12} />
           </a>
         </div>
       )}

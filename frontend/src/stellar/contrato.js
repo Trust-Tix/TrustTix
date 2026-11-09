@@ -1,4 +1,4 @@
-import { contract } from '@stellar/stellar-sdk'
+import { contract, rpc, scValToNative } from '@stellar/stellar-sdk'
 import { CONTRATO_ID, RED, RPC_URL } from './config'
 import { firmar } from './billetera'
 
@@ -73,15 +73,65 @@ async function leer(metodo, args = {}) {
   }
 }
 
+const servidor = new rpc.Server(RPC_URL)
+
+// ¿TrustTix paga las comisiones de red? Se pregunta una vez a /api/patrocinar.
+let consultaPatrocinio = null
+export function patrocinioActivo() {
+  if (!consultaPatrocinio) {
+    consultaPatrocinio = fetch('/api/patrocinar')
+      .then((r) => (r.ok && r.headers.get('content-type')?.includes('json') ? r.json() : { activo: false }))
+      .then((d) => Boolean(d.activo))
+      .catch(() => false)
+  }
+  return consultaPatrocinio
+}
+
+// Envía una transacción ya firmada. Primero pide a /api/patrocinar que TrustTix
+// pague la comisión; si el patrocinio no está disponible (en local, o sin la
+// cuenta patrocinadora configurada), la envía directo y la comisión sale de la
+// billetera, como antes.
+async function enviarFirmada(transaccion) {
+  try {
+    const r = await fetch('/api/patrocinar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xdr: transaccion.toXDR() }),
+    })
+    if (r.ok && r.headers.get('content-type')?.includes('json')) {
+      const { hash } = await r.json()
+      if (hash) return { hash, patrocinada: true }
+    }
+  } catch {
+    // Sin patrocinio: sigue con el envío directo.
+  }
+  const enviada = await servidor.sendTransaction(transaccion)
+  if (enviada.status === 'ERROR' || enviada.status === 'TRY_AGAIN_LATER') {
+    throw new Error(`La red no aceptó la transacción (${enviada.status}).`)
+  }
+  return { hash: enviada.hash, patrocinada: false }
+}
+
+// Espera a que la red confirme la transacción y devuelve su resultado.
+async function confirmar(hash) {
+  for (let intento = 0; intento < 60; intento++) {
+    const r = await servidor.getTransaction(hash)
+    if (r.status === 'SUCCESS') return r.returnValue ? scValToNative(r.returnValue) : undefined
+    if (r.status === 'FAILED') throw new Error('La red rechazó la transacción.')
+    await new Promise((listo) => setTimeout(listo, 1000))
+  }
+  throw new Error('La red tardó demasiado en confirmar. Revisa tu billetera en unos minutos.')
+}
+
 async function escribir(direccion, metodo, args) {
   const c = await cliente(direccion)
   let tx
   try {
     tx = await c[metodo](args)
     valor(tx, tx.result) // detecta errores del contrato antes de pedir la firma
-    const enviada = await tx.signAndSend()
-    const hash = enviada.sendTransactionResponse?.hash ?? enviada.getTransactionResponse?.txHash
-    return { resultado: valor(tx, enviada.result), hash }
+    await tx.sign()
+    const { hash, patrocinada } = await enviarFirmada(tx.signed)
+    return { resultado: await confirmar(hash), hash, patrocinada }
   } catch (e) {
     throw traducir(e, tx)
   }
