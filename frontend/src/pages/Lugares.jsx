@@ -15,7 +15,7 @@ export default function Lugares() {
     <>
       <Encabezado titulo="Lugares" />
       {cargando && !lugares.length ? (
-        <p className="vacio">Leyendo los lugares desde Stellar Testnet…</p>
+        <p className="vacio">Cargando lugares…</p>
       ) : (
         <div className="rejilla">
           {lugares.map((l) => (

@@ -27,7 +27,7 @@ export default function Historial({ boleto }) {
                 <small>{fechaHora(h.fecha)}</small>
                 {h.hash && (
                   <a className="enlace enlace--externo" href={enlaceTx(h.hash)} target="_blank" rel="noreferrer">
-                    Ver transacción <IconoExterno width={12} height={12} />
+                    Ver comprobante <IconoExterno width={12} height={12} />
                   </a>
                 )}
               </div>

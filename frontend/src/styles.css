@@ -500,6 +500,28 @@ a.billetera--conectada { cursor: pointer; }
 
 .landing__frase span { color: var(--texto); }
 
+.landing__cifras {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 56px;
+  padding-bottom: 72px;
+  border-top: 1px solid var(--borde);
+}
+
+.landing__cifras dl { margin: 0; display: flex; flex-wrap: wrap; gap: 28px 64px; }
+.landing__cifras dl > div { display: flex; flex-direction: column-reverse; gap: 4px; }
+.landing__cifras dt { color: var(--texto-2); font-size: 16px; }
+.landing__cifras dd {
+  margin: 0;
+  font-family: var(--fuente-titulo);
+  font-size: clamp(44px, 10vw, 88px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
 .landing__lados {
   display: grid;
   gap: 56px;

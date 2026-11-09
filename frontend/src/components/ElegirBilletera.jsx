@@ -43,7 +43,7 @@ export default function ElegirBilletera({ alConectar, antesDeExterna, alFallar }
           <strong>{ocupado === 'trusttix' ? (yaTiene ? 'Abriendo…' : 'Creando y activando…') : 'Billetera TrustTix'}</strong>
           <small>
             {yaTiene
-              ? 'Tu billetera de esta cuenta. Firma al instante, también en el celular.'
+              ? 'Tu billetera de esta cuenta. Pagas al instante, también en el celular.'
               : 'Se crea al instante para tu cuenta y recibe XLM de prueba. No instalas nada y funciona en el celular.'}
           </small>
         </span>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
@@ -8,6 +8,7 @@ import Modal from '../components/Modal'
 import { IconoCalendario, IconoEscudo, IconoUbicacion } from '../components/Iconos'
 import { abreviar, diaMes, fechaLarga, numero, precio } from '../utils/formato'
 import { enlaceCuenta } from '../stellar/config'
+import { patrocinioActivo } from '../stellar/contrato'
 import useUbicacion from '../hooks/useUbicacion'
 import useCoordenadas from '../hooks/useCoordenadas'
 import { comoLlegar, distanciaKm, mapaEmbebido, textoDistancia } from '../utils/mapas'
@@ -22,7 +23,12 @@ export default function DetalleEvento() {
   const [confirmando, setConfirmando] = useState(false)
   const [firmando, setFirmando] = useState(false)
   const [error, setError] = useState('')
+  const [sinComisiones, setSinComisiones] = useState(false)
   const { ubicacion } = useUbicacion()
+
+  useEffect(() => {
+    patrocinioActivo().then(setSinComisiones)
+  }, [])
 
   const evento = eventos.find((ev) => ev.id === Number(id))
   const soloEste = useMemo(() => (evento ? [evento] : []), [evento])
@@ -31,7 +37,7 @@ export default function DetalleEvento() {
     return (
       <>
         <Encabezado titulo="Detalles" atras />
-        <p className="vacio">Leyendo el evento desde Stellar…</p>
+        <p className="vacio">Cargando el evento…</p>
       </>
     )
   }
@@ -173,7 +179,9 @@ export default function DetalleEvento() {
             </div>
             <div className="precio precio--grande">
               {precio(evento.precio)}
-              {evento.precio > 0n && <span className="precio__usdc">Se paga en XLM de Testnet</span>}
+              {evento.precio > 0n && (
+                <span className="precio__usdc">{sinComisiones ? 'Precio final, sin comisiones' : 'Saldo de prueba, sin dinero real'}</span>
+              )}
             </div>
             {accion}
           </div>
@@ -187,7 +195,13 @@ export default function DetalleEvento() {
             <div><dt>Total</dt><dd>{precio(evento.precio)}</dd></div>
             <div>
               <dt>Paga</dt>
-              <dd>{billetera ? `${infoBilletera?.nombre ?? 'Tu billetera'} (${abreviar(billetera)})` : 'Billetera TrustTix, se crea al confirmar'}</dd>
+              <dd>
+                {!billetera
+                  ? 'Billetera TrustTix, se crea al confirmar'
+                  : infoBilletera?.tipo === 'trusttix'
+                    ? 'Tu billetera TrustTix'
+                    : `${infoBilletera?.nombre ?? 'Tu billetera'} (${abreviar(billetera)})`}
+              </dd>
             </div>
             {saldoActual != null && (
               <div><dt>Saldo después</dt><dd>{xlmTexto(saldoActual - precioXLM)}</dd></div>
@@ -195,9 +209,10 @@ export default function DetalleEvento() {
           </dl>
           <p className="nota">
             {!billetera || infoBilletera?.tipo === 'trusttix'
-              ? 'Tu billetera TrustTix firma al confirmar, sin ventanas extra.'
-              : `${infoBilletera?.nombre ?? 'Tu billetera'} te pedirá firmar.`}{' '}
-            El pago y el boleto van en una sola transacción de Stellar Testnet: si una parte falla, no se cobra nada.
+              ? 'Pagas con tu billetera TrustTix, sin ventanas extra.'
+              : `${infoBilletera?.nombre ?? 'Tu billetera'} te pedirá confirmar el pago.`}{' '}
+            {sinComisiones && 'TrustTix cubre la comisión de la red. '}
+            El cobro y el boleto van juntos: si algo falla, no se cobra nada.
           </p>
           {sinSaldo && <p className="alerta alerta--error">Tu saldo no alcanza para este boleto.</p>}
           {error && <p className="alerta alerta--error" role="alert">{error}</p>}
@@ -206,7 +221,7 @@ export default function DetalleEvento() {
               Cancelar
             </button>
             <button type="button" className="boton boton--claro" onClick={confirmarCompra} disabled={firmando || sinSaldo}>
-              {firmando ? (billetera ? 'Firmando…' : 'Preparando…') : evento.precio === 0n ? 'Confirmar' : 'Pagar'}
+              {firmando ? (billetera ? 'Pagando…' : 'Preparando…') : evento.precio === 0n ? 'Confirmar' : 'Pagar'}
             </button>
           </div>
         </Modal>

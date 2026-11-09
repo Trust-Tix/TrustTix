@@ -204,7 +204,7 @@ export default function Escaner() {
               <h2>Entrada registrada</h2>
               <p>{folio(lectura.id)} quedó marcado como usado en el contrato. Si se vuelve a escanear, será rechazado.</p>
               <a className="enlace enlace--externo" href={enlaceTx(lectura.hash)} target="_blank" rel="noreferrer">
-                Ver la transacción <IconoExterno width={12} height={12} />
+                Ver comprobante <IconoExterno width={12} height={12} />
               </a>
             </>
           )}

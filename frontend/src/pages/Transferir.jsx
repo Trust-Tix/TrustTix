@@ -48,7 +48,7 @@ export default function Transferir() {
             {folio(boleto.id)} ahora pertenece a <span className="mono">{abreviar(destino)}</span>. Ya no aparece en tu cuenta.
           </p>
           <a className="enlace enlace--externo" href={enlaceTx(hash)} target="_blank" rel="noreferrer">
-            Ver la transacción en stellar.expert <IconoExterno width={12} height={12} />
+            Ver el comprobante público <IconoExterno width={12} height={12} />
           </a>
           <Link to="/boletos" className="boton boton--claro">Ir a mis boletos</Link>
         </div>
@@ -61,7 +61,7 @@ export default function Transferir() {
     setError('')
     const limpio = destino.trim()
     if (!direccionValida(limpio)) {
-      setError('La dirección no es una cuenta Stellar válida (empieza con G y tiene 56 caracteres).')
+      setError('Esa cuenta no es válida. Escanea el QR de su billetera o pega su cuenta completa (empieza con G).')
       return
     }
     setEnviando(true)
@@ -91,7 +91,7 @@ export default function Transferir() {
         )}
 
         <label className="campo">
-          <span>Dirección Stellar de quien recibe</span>
+          <span>Cuenta de quien recibe</span>
           <input
             value={destino}
             onChange={(e) => setDestino(e.target.value.toUpperCase())}
@@ -115,7 +115,7 @@ export default function Transferir() {
         {error && <p className="alerta alerta--error" role="alert">{error}</p>}
 
         <button type="submit" className="boton boton--claro boton--bloque" disabled={!puede || enviando}>
-          {enviando ? 'Esperando a la red…' : 'Firmar y transferir'}
+          {enviando ? 'Transfiriendo…' : 'Transferir boleto'}
         </button>
       </form>
     </>

@@ -47,7 +47,7 @@ export default function DetalleBoleto() {
           ¡Listo! Tu boleto quedó registrado a tu nombre en Stellar.{' '}
           {state.hash && (
             <a className="enlace enlace--externo" href={enlaceTx(state.hash)} target="_blank" rel="noreferrer">
-              Ver la transacción <IconoExterno width={12} height={12} />
+              Ver comprobante <IconoExterno width={12} height={12} />
             </a>
           )}
         </p>
@@ -104,7 +104,7 @@ export default function DetalleBoleto() {
           <section className="tarjeta">
             <h3 className="tarjeta__titulo">Registro del boleto</h3>
             <p className="nota">
-              Muestra este QR en la entrada. El dueño y el estado se leen del contrato en Stellar Testnet, así que cualquiera puede
+              Muestra este QR en la entrada. El boleto está a tu nombre en un registro público, así que cualquiera puede
               comprobarlos.
             </p>
             <Historial boleto={boleto} />

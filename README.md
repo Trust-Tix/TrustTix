@@ -98,6 +98,8 @@ El módulo de billeteras ([frontend/src/stellar/billetera.js](frontend/src/stell
 | **Billetera TrustTix** (recomendada) | Se crea al instante para la cuenta de Google y se activa con Friendbot, que le deposita XLM de prueba. Firma en el navegador, así que funciona en el celular sin instalar nada. Queda guardada en la cuenta, así que es la misma en cualquier dispositivo o subdominio. Se puede respaldar o importar con su clave secreta. |
 | **Otra billetera** | El selector de [Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit): Varial (antes Freighter), xBull, Albedo, LOBSTR, Hana, Rabet y más. Debe estar en Testnet. |
 
+**Comisiones patrocinadas.** La función de Vercel [frontend/api/patrocinar.js](frontend/api/patrocinar.js) envuelve cada llamada al contrato en un *fee bump* firmado por una cuenta de TrustTix: la persona paga solo el boleto y TrustTix cubre la comisión de red. Solo patrocina llamadas al contrato TrustTix, con un tope de 1 XLM. Se activa con la variable de entorno `TRUSTTIX_PATROCINADOR_SECRETA` (la clave secreta de la cuenta que paga, marcada como *Sensitive* en Vercel). Sin ella, o en local, la app envía la transacción directo y la comisión sale de la billetera.
+
 La página **Billetera** (`/billetera`, en los tres portales) muestra el saldo, recibe con QR, envía XLM (si la cuenta destino no existe, la crea) y lista los movimientos, incluidas las compras de boletos. Las operaciones de cuenta están en [frontend/src/stellar/cuenta.js](frontend/src/stellar/cuenta.js) y usan Horizon de Testnet.
 
 > La billetera TrustTix guarda su llave en la tabla `billeteras` de Supabase, que solo su dueño puede leer, y en el navegador. Si no hay sesión de Supabase, vive solo en el navegador. Es suficiente para Testnet, pero no para dinero real: quien administra el proyecto de Supabase podría leer las llaves. En Mainnet se reemplazaría por una billetera con passkeys o custodia.
@@ -107,7 +109,7 @@ La página **Billetera** (`/billetera`, en los tres portales) muestra el saldo, 
 El contrato guarda lo que define un boleto. La portada, la categoría, la dirección, las coordenadas y la descripción de cada evento viven en Supabase: una tabla `eventos` y un bucket público `eventos` para las imágenes.
 
 1. Crea un proyecto en [Supabase](https://supabase.com/dashboard).
-2. En **SQL Editor**, corre en orden los archivos de [supabase/migrations](supabase/migrations): `20261103000000_eventos.sql` crea la tabla de eventos, sus reglas de acceso y el bucket; `20261108000000_billeteras.sql` crea la tabla donde cada cuenta guarda su billetera TrustTix.
+2. En **SQL Editor**, corre en orden los archivos de [supabase/migrations](supabase/migrations): `20261103000000_eventos.sql` crea la tabla de eventos, sus reglas de acceso y el bucket; `20261108000000_billeteras.sql` crea la tabla donde cada cuenta guarda su billetera TrustTix; `20261108010000_total_billeteras.sql` crea la función que cuenta las billeteras para la landing.
 3. En **Authentication > Sign In / Providers > Google**, activa Google y pega el mismo ID de cliente de `VITE_GOOGLE_CLIENT_ID` en **Client IDs**. Así la sesión de Google también abre la de Supabase.
 4. En **Project Settings > API**, copia la URL y la llave pública en `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (en `frontend/.env.local` y en Vercel).
 5. Carga el catálogo de ejemplo. Toma la llave `service_role` de la misma pantalla y úsala solo en la terminal:
