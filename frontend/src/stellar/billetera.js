@@ -149,7 +149,11 @@ export async function conectarExterna() {
   try {
     ;({ address } = await kit().authModal())
   } catch (e) {
-    throw new Error(e?.message && !/closed/i.test(e.message) ? e.message : 'Se cerró el selector sin conectar una billetera.')
+    // Cerrar el selector es una decisión de la persona, no un error: se marca para no mostrar alerta.
+    if (!e?.message || /clos|cancel|reject|dismiss/i.test(e.message)) {
+      throw Object.assign(new Error('Se cerró el selector sin conectar una billetera.'), { cancelado: true })
+    }
+    throw new Error(e.message)
   }
   await revisarRedExterna()
   const modulo = kit().selectedModule

@@ -24,7 +24,9 @@ export default function ElegirBilletera({ alConectar, antesDeExterna, alFallar }
       await conectarBilletera(tipo)
       alConectar?.()
     } catch (e) {
-      if (tipo === 'externa' && alFallar) alFallar(e.message)
+      if (e.cancelado) {
+        // Cerró el selector: no hay nada que avisar.
+      } else if (tipo === 'externa' && alFallar) alFallar(e.message)
       else setError(e.message)
     }
     setOcupado(null)
