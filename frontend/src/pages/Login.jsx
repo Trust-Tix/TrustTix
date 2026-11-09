@@ -18,11 +18,13 @@ export default function Login() {
   const destino = location.state?.desde ?? '/'
   const contenedor = useRef(null)
   const [error, setError] = useState('')
+  const [entrando, setEntrando] = useState(false)
 
   useEffect(() => {
     if (usuario || !contenedor.current) return
-    mostrarBotonGoogle(contenedor.current, (perfil, token) => {
-      iniciarSesion(perfil, token)
+    mostrarBotonGoogle(contenedor.current, async (perfil, token) => {
+      setEntrando(true)
+      await iniciarSesion(perfil, token)
       navigate(destino, { replace: true })
     }).catch((e) => setError(e.message))
   }, [usuario, iniciarSesion, navigate, destino])
@@ -42,6 +44,7 @@ export default function Login() {
       </div>
       <div className="login__acciones">
         <div ref={contenedor} className="login__google" />
+        {entrando && <p className="login__nota" role="status">Entrando y buscando tu billetera…</p>}
         {error && <p className="alerta alerta--error" role="alert">{error}</p>}
         <p className="login__nota">
           Tu cuenta de Google solo identifica tu sesión. Para comprar, crear eventos o registrar entradas firmas con tu billetera.
