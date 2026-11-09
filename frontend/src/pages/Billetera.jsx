@@ -4,7 +4,7 @@ import Encabezado from '../components/Encabezado'
 import CodigoCuenta from '../components/CodigoCuenta'
 import ElegirBilletera from '../components/ElegirBilletera'
 import { IconoExterno } from '../components/Iconos'
-import { claveSecretaPropia } from '../stellar/billetera'
+import { billeteraEnCuenta, claveSecretaPropia } from '../stellar/billetera'
 import { activarConFriendbot, enviarXLM, movimientos } from '../stellar/cuenta'
 import EscanerCuenta from '../components/EscanerCuenta'
 import { enlaceCuenta, enlaceTx } from '../stellar/config'
@@ -236,8 +236,11 @@ export default function Billetera() {
         <section className="tarjeta">
           <h3 className="tarjeta__titulo">Respaldo</h3>
           <p className="nota">
-            Tu billetera TrustTix vive en este navegador. Guarda la clave secreta para usarla en otro dispositivo o importarla en
-            Varial (antes Freighter). Quien la tenga controla la cuenta. Es solo para Testnet.
+            {billeteraEnCuenta()
+              ? 'Tu billetera TrustTix está guardada en tu cuenta: al entrar con Google desde otro dispositivo o subdominio, es la misma. '
+              : 'Tu billetera TrustTix vive solo en este navegador. Guarda la clave secreta para usarla en otro dispositivo. '}
+            Con la clave también la puedes importar en Varial (antes Freighter). Quien la tenga controla la cuenta. Es solo para
+            Testnet.
           </p>
           {verClave ? (
             <p className="mono rompe clave-secreta">{claveSecretaPropia(usuario?.id)}</p>

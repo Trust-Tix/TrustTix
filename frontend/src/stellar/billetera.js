@@ -2,15 +2,16 @@ import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk'
 import { StellarWalletsKit, SwkAppDarkTheme } from '@creit.tech/stellar-wallets-kit'
 import { defaultModules } from '@creit.tech/stellar-wallets-kit/modules/utils'
 import { RED } from './config'
+import { guardarBilleteraEnCuenta, haySesion, leerBilleteraDeCuenta, supabaseListo } from '../supabase'
 
 // Módulo de billeteras. Hay dos tipos:
 //
-//   trusttix   Billetera integrada: una cuenta de Testnet que se crea en este
-//              navegador para la cuenta de Google y se activa con Friendbot.
-//              Sirve en el celular y no necesita instalar nada. La llave queda
-//              en el almacenamiento local, por eso es SOLO para Testnet.
-//   externa    Cualquier billetera de Stellar Wallets Kit: Freighter, xBull,
-//              Albedo, LOBSTR, Hana, Rabet y otras.
+//   trusttix   Billetera integrada: una cuenta de Testnet que se crea para la
+//              cuenta de Google y se activa con Friendbot. Sirve en el celular
+//              y no necesita instalar nada. Su llave se guarda en la cuenta
+//              (Supabase) y en el navegador, por eso es SOLO para Testnet.
+//   externa    Cualquier billetera de Stellar Wallets Kit: Varial (antes
+//              Freighter), xBull, Albedo, LOBSTR, Hana, Rabet y otras.
 //
 // Todo el resto de la app firma con `firmar`, sin saber qué tipo está activo.
 //
@@ -59,28 +60,49 @@ export const billeteraActiva = () => describir(activa)
 
 export const tieneBilleteraPropia = (usuarioId) => Boolean(usuarioId && leer(clavePropia(usuarioId))?.secreta)
 
-function activarPropia(secreta) {
+function activarPropia(secreta, enCuenta = false) {
   const par = Keypair.fromSecret(secreta)
-  activa = { tipo: 'trusttix', direccion: par.publicKey(), nombre: 'Billetera TrustTix', par }
+  activa = { tipo: 'trusttix', direccion: par.publicKey(), nombre: 'Billetera TrustTix', par, enCuenta }
   return activa
 }
 
-// Abre la billetera integrada de la cuenta; si no existe, la crea.
+// Abre la billetera integrada de la cuenta; si no existe, la crea. Con sesión
+// de Supabase, la billetera vive en la cuenta y es la misma en cualquier
+// dispositivo o subdominio; sin ella, solo en este navegador.
+//   1. La de la cuenta, si ya hay una (gana sobre la de este navegador).
+//   2. La de este navegador, que además se sube a la cuenta.
+//   3. Una nueva, guardada en los dos lugares.
 export async function usarBilleteraPropia(usuarioId) {
   if (!usuarioId) throw new Error('Inicia sesión con Google para usar la billetera TrustTix.')
-  let guardada = leer(clavePropia(usuarioId))
-  const nueva = !guardada?.secreta
-  if (nueva) {
-    guardada = { secreta: Keypair.random().secret(), creada: new Date().toISOString() }
-    guardar(clavePropia(usuarioId), guardada)
+  const conCuenta = supabaseListo && (await haySesion())
+  const remota = conCuenta ? await leerBilleteraDeCuenta().catch(() => undefined) : undefined
+  let local = leer(clavePropia(usuarioId))
+  let nueva = false
+
+  if (remota?.secreta) {
+    local = { secreta: remota.secreta, creada: local?.creada ?? new Date().toISOString() }
+    guardar(clavePropia(usuarioId), local)
+  } else if (!local?.secreta) {
+    local = { secreta: Keypair.random().secret(), creada: new Date().toISOString() }
+    guardar(clavePropia(usuarioId), local)
+    nueva = true
   }
-  const b = activarPropia(guardada.secreta)
+
+  // `remota === null` = la cuenta respondió y no tiene billetera: se sube esta.
+  let enCuenta = Boolean(remota?.secreta)
+  if (conCuenta && remota === null) {
+    const par = Keypair.fromSecret(local.secreta)
+    enCuenta = await guardarBilleteraEnCuenta(par.publicKey(), local.secreta).then(() => true, () => false)
+  }
+
+  const b = activarPropia(local.secreta, enCuenta)
   guardar(CLAVE_ACTIVA, { tipo: 'trusttix', usuarioId })
   return { ...describir(b), nueva }
 }
 
-// Trae a este navegador una billetera TrustTix creada en otro (con su clave secreta).
-export function importarBilleteraPropia(usuarioId, secreta) {
+// Usa una billetera creada en otro lugar (con su clave secreta). Con sesión,
+// pasa a ser la billetera de la cuenta en todos los dispositivos.
+export async function importarBilleteraPropia(usuarioId, secreta) {
   const limpia = secreta.trim()
   let par
   try {
@@ -88,11 +110,19 @@ export function importarBilleteraPropia(usuarioId, secreta) {
   } catch {
     throw new Error('Esa no es una clave secreta válida. Empieza con S y tiene 56 caracteres.')
   }
+  let enCuenta = false
+  if (supabaseListo && (await haySesion())) {
+    await guardarBilleteraEnCuenta(par.publicKey(), limpia)
+    enCuenta = true
+  }
   guardar(clavePropia(usuarioId), { secreta: limpia, creada: new Date().toISOString(), importada: true })
   guardar(CLAVE_ACTIVA, { tipo: 'trusttix', usuarioId })
-  activarPropia(par.secret())
+  activarPropia(par.secret(), enCuenta)
   return describir(activa)
 }
+
+// La billetera TrustTix activa está respaldada en la cuenta.
+export const billeteraEnCuenta = () => Boolean(activa?.enCuenta)
 
 // Para respaldar la billetera o llevarla a Freighter. Solo la integrada tiene clave aquí.
 export function claveSecretaPropia(usuarioId) {
@@ -139,8 +169,9 @@ export async function reconectar(usuarioId) {
       return describir(activa)
     }
     const ultima = leer(CLAVE_ACTIVA)
-    if (ultima?.tipo === 'trusttix' && ultima.usuarioId === usuarioId && tieneBilleteraPropia(usuarioId)) {
-      return describir(activarPropia(claveSecretaPropia(usuarioId)))
+    if (ultima?.tipo === 'trusttix' && ultima.usuarioId === usuarioId) {
+      // Pasa por la cuenta: si en otro dispositivo se importó otra clave, esa manda.
+      return describir(await usarBilleteraPropia(usuarioId))
     }
     if (ultima?.tipo === 'externa' && ultima.id) {
       kit().setWallet(ultima.id)

@@ -175,11 +175,12 @@ export function AppProvider({ children }) {
   }, [billetera, recargarMisBoletos, recargarSaldo])
 
   // perfil: { id, nombre, correo, foto } de la cuenta de Google. Con el mismo
-  // token se abre la sesión de Supabase; si falla, la app sigue y solo no se
-  // podrán guardar datos de eventos.
-  const iniciarSesion = useCallback((perfil, token) => {
+  // token se abre la sesión de Supabase ANTES de marcar la sesión iniciada: la
+  // billetera de la cuenta se busca ahí, y sin esperar se crearía otra. Si
+  // Supabase falla, la app sigue con la billetera de este navegador.
+  const iniciarSesion = useCallback(async (perfil, token) => {
+    if (token) await entrarConGoogle(token).catch((e) => console.warn(e.message))
     setUsuario(perfil)
-    if (token) entrarConGoogle(token).catch((e) => console.warn(e.message))
   }, [])
 
   const cerrarSesion = useCallback(() => {
@@ -243,7 +244,7 @@ export function AppProvider({ children }) {
 
   const importarBilletera = useCallback(
     async (secreta) => {
-      const b = importarBilleteraPropia(usuarioId, secreta)
+      const b = await importarBilleteraPropia(usuarioId, secreta)
       ponerBilletera(b)
       return b.direccion
     },

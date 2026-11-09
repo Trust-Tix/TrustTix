@@ -25,6 +25,30 @@ export async function salirDeSupabase() {
   await cliente?.auth.signOut()
 }
 
+// ---------- Billetera TrustTix de la cuenta ----------
+
+// Hay sesión de Supabase (la abre el login de Google): sin ella la billetera
+// solo vive en este navegador.
+export async function haySesion() {
+  if (!cliente) return false
+  const { data } = await cliente.auth.getUser().catch(() => ({ data: {} }))
+  return Boolean(data?.user)
+}
+
+// La billetera guardada en la cuenta, o null si la cuenta todavía no tiene.
+export async function leerBilleteraDeCuenta() {
+  const { data, error } = await cliente.from('billeteras').select('direccion, secreta').maybeSingle()
+  if (error) throw new Error(`No pudimos leer tu billetera de la cuenta: ${error.message}`)
+  return data
+}
+
+// Guarda (o reemplaza) la billetera de la cuenta.
+export async function guardarBilleteraEnCuenta(direccion, secreta) {
+  const usuario = await usuarioActual()
+  const { error } = await cliente.from('billeteras').upsert({ usuario: usuario.id, direccion, secreta }, { onConflict: 'usuario' })
+  if (error) throw new Error(`No pudimos guardar tu billetera en tu cuenta: ${error.message}`)
+}
+
 const urlImagen = (ruta) => {
   if (!ruta) return undefined
   if (/^https?:\/\//.test(ruta)) return ruta
