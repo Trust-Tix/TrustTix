@@ -256,6 +256,127 @@ fn no_se_puede_desplegar_con_una_comision_excesiva() {
     env.register(TrustTix, (token, admin, 1_500u32, 200u32));
 }
 
+// ---------- Reventa ----------
+
+/// Un evento de 25 XLM y un boleto comprado por `vendedor`.
+fn boleto_para_revender(p: &Prueba) -> (u32, Address) {
+    let evento = crear(p, 10, PRECIO);
+    let vendedor = con_saldo(p, PRECIO);
+    let boleto = p.tix.comprar(&vendedor, &evento);
+    (boleto, vendedor)
+}
+
+#[test]
+fn la_reventa_paga_al_vendedor_cobra_2_por_ciento_y_cambia_el_dueno() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let comision_compra = p.token.balance(&p.admin);
+    let reventa = 270_000_000; // 27 XLM, dentro del tope de 27.5
+    let comprador = con_saldo(&p, reventa);
+
+    p.tix.publicar_reventa(&boleto, &vendedor, &reventa);
+    assert_eq!(p.tix.consultar_reventa(&boleto), reventa);
+    p.tix.comprar_reventa(&boleto, &comprador);
+
+    // 2 % de 27 XLM para TrustTix y el resto para quien revendió.
+    assert_eq!(p.token.balance(&p.admin) - comision_compra, 5_400_000);
+    assert_eq!(p.token.balance(&vendedor), reventa - 5_400_000);
+    assert_eq!(p.token.balance(&comprador), 0);
+
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, comprador);
+    assert_eq!(p.tix.boletos_de(&vendedor).len(), 0);
+    assert_eq!(p.tix.boletos_de(&comprador).len(), 1);
+    // La oferta desaparece: no se puede comprar dos veces.
+    assert_eq!(
+        p.tix.try_consultar_reventa(&boleto),
+        Err(Ok(Error::NoEnReventa))
+    );
+    let otro = con_saldo(&p, reventa);
+    assert_eq!(
+        p.tix.try_comprar_reventa(&boleto, &otro),
+        Err(Ok(Error::NoEnReventa))
+    );
+}
+
+#[test]
+fn nadie_revende_arriba_del_tope() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+
+    // El tope inicial es 110 % del precio: 27.5 XLM.
+    let caro = p.tix.try_publicar_reventa(&boleto, &vendedor, &275_000_001);
+    assert_eq!(caro, Err(Ok(Error::SobreTope)));
+    assert!(p
+        .tix
+        .try_publicar_reventa(&boleto, &vendedor, &275_000_000)
+        .is_ok());
+
+    let negativo = p.tix.try_publicar_reventa(&boleto, &vendedor, &-1);
+    assert_eq!(negativo, Err(Ok(Error::PrecioInvalido)));
+}
+
+#[test]
+fn solo_el_dueno_publica_o_cancela_la_reventa() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let extrano = Address::generate(&p.env);
+
+    let ajeno = p.tix.try_publicar_reventa(&boleto, &extrano, &PRECIO);
+    assert_eq!(ajeno, Err(Ok(Error::NoEsDueno)));
+
+    p.tix.publicar_reventa(&boleto, &vendedor, &PRECIO);
+    let cancelar_ajeno = p.tix.try_cancelar_reventa(&boleto, &extrano);
+    assert_eq!(cancelar_ajeno, Err(Ok(Error::NoEsDueno)));
+
+    p.tix.cancelar_reventa(&boleto, &vendedor);
+    assert_eq!(
+        p.tix.try_consultar_reventa(&boleto),
+        Err(Ok(Error::NoEnReventa))
+    );
+    let dos_veces = p.tix.try_cancelar_reventa(&boleto, &vendedor);
+    assert_eq!(dos_veces, Err(Ok(Error::NoEnReventa)));
+}
+
+#[test]
+fn transferir_o_entrar_retira_el_boleto_de_la_reventa() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let amigo = Address::generate(&p.env);
+
+    // Al regalarlo, la oferta del dueño anterior deja de valer.
+    p.tix.publicar_reventa(&boleto, &vendedor, &PRECIO);
+    p.tix.transferir(&boleto, &vendedor, &amigo);
+    assert_eq!(
+        p.tix.try_consultar_reventa(&boleto),
+        Err(Ok(Error::NoEnReventa))
+    );
+
+    // Un boleto que ya entró no se puede publicar ni comprar.
+    p.tix.publicar_reventa(&boleto, &amigo, &PRECIO);
+    p.tix.registrar_entrada(&boleto, &p.organizador);
+    assert_eq!(
+        p.tix.try_consultar_reventa(&boleto),
+        Err(Ok(Error::NoEnReventa))
+    );
+    let usado = p.tix.try_publicar_reventa(&boleto, &amigo, &PRECIO);
+    assert_eq!(usado, Err(Ok(Error::YaUsado)));
+}
+
+#[test]
+fn nadie_se_compra_su_propio_boleto_y_sin_saldo_no_hay_reventa() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    p.tix.publicar_reventa(&boleto, &vendedor, &PRECIO);
+
+    let a_si_mismo = p.tix.try_comprar_reventa(&boleto, &vendedor);
+    assert_eq!(a_si_mismo, Err(Ok(Error::MismoDueno)));
+
+    let sin_dinero = Address::generate(&p.env);
+    assert!(p.tix.try_comprar_reventa(&boleto, &sin_dinero).is_err());
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, vendedor);
+    assert_eq!(p.tix.consultar_reventa(&boleto), PRECIO);
+}
+
 #[test]
 fn validaciones_al_crear_y_consultar() {
     let p = preparar();
