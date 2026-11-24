@@ -175,6 +175,88 @@ fn el_organizador_puede_registrar_entradas_y_quitar_personal() {
 }
 
 #[test]
+fn la_comision_se_redondea_a_favor_del_organizador() {
+    let p = preparar();
+    // 3 % de 1,001 stroops son 30.03: TrustTix cobra 30 y el organizador recibe 971.
+    let evento = crear(&p, 5, 1_001);
+    let comprador = con_saldo(&p, 10_000);
+
+    p.tix.comprar(&comprador, &evento);
+
+    assert_eq!(p.token.balance(&p.admin), 30);
+    assert_eq!(p.token.balance(&p.organizador), 971);
+}
+
+#[test]
+fn un_evento_gratis_no_cobra_comision() {
+    let p = preparar();
+    let evento = crear(&p, 5, 0);
+    let asistente = Address::generate(&p.env);
+
+    p.tix.comprar(&asistente, &evento);
+
+    assert_eq!(p.token.balance(&p.admin), 0);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 1);
+}
+
+#[test]
+fn el_administrador_cambia_la_comision_y_firma_el_cambio() {
+    let p = preparar();
+    assert_eq!(
+        p.tix.comisiones(),
+        Comisiones {
+            compra: COMPRA,
+            reventa: REVENTA
+        }
+    );
+    assert_eq!(p.tix.admin(), p.admin);
+
+    p.tix.configurar_comision(&0, &150);
+
+    // El cambio quedó firmado por la cuenta de TrustTix, no por cualquiera.
+    let firmas = p.env.auths();
+    assert_eq!(firmas.len(), 1);
+    assert_eq!(firmas[0].0, p.admin);
+    assert_eq!(
+        p.tix.comisiones(),
+        Comisiones {
+            compra: 0,
+            reventa: 150
+        }
+    );
+
+    // Con comisión 0, el organizador recibe el precio completo.
+    let evento = crear(&p, 5, PRECIO);
+    let comprador = con_saldo(&p, PRECIO);
+    p.tix.comprar(&comprador, &evento);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO);
+    assert_eq!(p.token.balance(&p.admin), 0);
+}
+
+#[test]
+fn ninguna_comision_pasa_del_diez_por_ciento() {
+    let p = preparar();
+    assert_eq!(
+        p.tix.try_configurar_comision(&1_001, &200),
+        Err(Ok(Error::ComisionInvalida))
+    );
+    assert_eq!(
+        p.tix.try_configurar_comision(&300, &1_001),
+        Err(Ok(Error::ComisionInvalida))
+    );
+    assert!(p.tix.try_configurar_comision(&1_000, &1_000).is_ok());
+}
+
+#[test]
+#[should_panic]
+fn no_se_puede_desplegar_con_una_comision_excesiva() {
+    let env = Env::default();
+    let token = Address::generate(&env);
+    let admin = Address::generate(&env);
+    env.register(TrustTix, (token, admin, 1_500u32, 200u32));
+}
+
+#[test]
 fn validaciones_al_crear_y_consultar() {
     let p = preparar();
     let vacio = p.tix.try_crear_evento(
