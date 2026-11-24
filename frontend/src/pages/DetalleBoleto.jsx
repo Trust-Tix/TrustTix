@@ -19,7 +19,7 @@ export default function DetalleBoleto() {
     return (
       <>
         <Encabezado titulo="Tu boleto" atras />
-        <p className="vacio">Leyendo el boleto desde Stellar…</p>
+        <p className="vacio">Cargando tu boleto…</p>
       </>
     )
   }

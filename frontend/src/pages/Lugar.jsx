@@ -20,7 +20,7 @@ export default function Lugar() {
       <>
         <Encabezado titulo="Lugar" atras />
         <p className="vacio">
-          {cargando ? 'Leyendo el lugar desde Stellar…' : <>No hay eventos en este lugar. <Link to="/lugares">Ver lugares</Link></>}
+          {cargando ? 'Cargando el lugar…' : <>No hay eventos en este lugar. <Link to="/lugares">Ver lugares</Link></>}
         </p>
       </>
     )

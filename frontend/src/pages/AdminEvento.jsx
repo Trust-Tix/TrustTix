@@ -80,7 +80,7 @@ export default function AdminEvento() {
       <>
         <Encabezado titulo="Evento" atras />
         <p className="vacio">
-          {cargando ? 'Leyendo el evento desde Stellar…' : <>Este evento no existe. <Link to="/organizador">Ver mis eventos</Link></>}
+          {cargando ? 'Cargando el evento…' : <>Este evento no existe. <Link to="/organizador">Ver mis eventos</Link></>}
         </p>
       </>
     )

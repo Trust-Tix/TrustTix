@@ -210,7 +210,7 @@ export default function Billetera() {
       <section className="tarjeta">
         <h3 className="tarjeta__titulo">Movimientos</h3>
         {lista === null ? (
-          <p className="nota">Leyendo movimientos…</p>
+          <p className="nota">Cargando movimientos…</p>
         ) : lista.length === 0 ? (
           <p className="nota">Todavía no hay movimientos.</p>
         ) : (

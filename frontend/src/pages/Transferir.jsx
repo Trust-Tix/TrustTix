@@ -22,7 +22,7 @@ export default function Transferir() {
     return (
       <>
         <Encabezado titulo="Transferir" atras />
-        <p className="vacio">Leyendo el boleto desde Stellar…</p>
+        <p className="vacio">Cargando tu boleto…</p>
       </>
     )
   }
