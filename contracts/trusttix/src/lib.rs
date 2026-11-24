@@ -5,12 +5,14 @@
 //! Reglas que hace cumplir la red:
 //! 1. Un evento nunca vende más boletos que su capacidad.
 //! 2. Cada boleto tiene un solo dueño, y solo ese dueño puede transferirlo.
-//! 3. El pago al organizador y la emisión del boleto ocurren en la misma transacción.
+//! 3. El pago al organizador, la comisión de TrustTix y la emisión del boleto
+//!    ocurren en la misma transacción.
 //! 4. Solo el personal autorizado por el organizador registra entradas, y cada
 //!    boleto entra una sola vez.
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env, String, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
+    Address, Env, String, Vec,
 };
 
 /// Ledgers aproximados en un día (un ledger cada ~5 segundos).
@@ -18,6 +20,11 @@ const DIA: u32 = 17_280;
 /// Si a un registro le quedan menos de 7 días de vida, se extiende a 30.
 const UMBRAL_TTL: u32 = 7 * DIA;
 const EXTENDER_TTL: u32 = 30 * DIA;
+
+/// Las comisiones se expresan en puntos base: 300 = 3 %.
+const PUNTOS_BASE: i128 = 10_000;
+/// Ninguna comisión puede pasar del 10 %, ni siquiera por decisión del administrador.
+const COMISION_MAXIMA: u32 = 1_000;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -32,6 +39,16 @@ pub enum Error {
     CapacidadInvalida = 7,
     PrecioInvalido = 8,
     MismoDueno = 9,
+    ComisionInvalida = 10,
+}
+
+/// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
+/// `reventa` sobre cada boleto revendido.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Comisiones {
+    pub compra: u32,
+    pub reventa: u32,
 }
 
 #[contracttype]
@@ -61,6 +78,8 @@ pub struct Boleto {
 #[derive(Clone)]
 enum Clave {
     Token,
+    Admin,
+    Comisiones,
     TotalEventos,
     TotalBoletos,
     Evento(u32),
@@ -86,6 +105,14 @@ pub struct Compra {
     pub boleto: u32,
     pub comprador: Address,
     pub precio: i128,
+    /// Parte del precio que fue a TrustTix.
+    pub comision: i128,
+}
+
+#[contractevent]
+pub struct ComisionesActualizadas {
+    pub compra: u32,
+    pub reventa: u32,
 }
 
 #[contractevent]
@@ -111,10 +138,32 @@ pub struct TrustTix;
 impl TrustTix {
     /// Se ejecuta una sola vez al desplegar. `token` es el contrato del activo
     /// con el que se paga (en Testnet, el Stellar Asset Contract de XLM).
-    pub fn __constructor(env: Env, token: Address) {
+    /// `admin` es la cuenta de TrustTix: recibe las comisiones y es la única que
+    /// puede cambiarlas.
+    pub fn __constructor(env: Env, token: Address, admin: Address, compra: u32, reventa: u32) {
+        let comisiones = validar_comisiones(&env, compra, reventa);
         env.storage().instance().set(&Clave::Token, &token);
+        env.storage().instance().set(&Clave::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&Clave::Comisiones, &comisiones);
         env.storage().instance().set(&Clave::TotalEventos, &0u32);
         env.storage().instance().set(&Clave::TotalBoletos, &0u32);
+    }
+
+    // ---------- Administrador ----------
+
+    /// Cambia las comisiones de TrustTix. Solo el administrador, y nunca arriba del 10 %.
+    pub fn configurar_comision(env: Env, compra: u32, reventa: u32) -> Result<(), Error> {
+        admin(&env).require_auth();
+        if compra > COMISION_MAXIMA || reventa > COMISION_MAXIMA {
+            return Err(Error::ComisionInvalida);
+        }
+        env.storage()
+            .instance()
+            .set(&Clave::Comisiones, &Comisiones { compra, reventa });
+        ComisionesActualizadas { compra, reventa }.publish(&env);
+        Ok(())
     }
 
     // ---------- Organizador ----------
@@ -148,7 +197,12 @@ impl TrustTix {
             precio,
         };
         guardar(&env, &Clave::Evento(id), &evento);
-        EventoCreado { evento: id, organizador, capacidad }.publish(&env);
+        EventoCreado {
+            evento: id,
+            organizador,
+            capacidad,
+        }
+        .publish(&env);
         Ok(id)
     }
 
@@ -164,14 +218,17 @@ impl TrustTix {
     pub fn quitar_personal(env: Env, evento_id: u32, cuenta: Address) -> Result<(), Error> {
         let evento = leer_evento(&env, evento_id)?;
         evento.organizador.require_auth();
-        env.storage().persistent().remove(&Clave::Personal(evento_id, cuenta));
+        env.storage()
+            .persistent()
+            .remove(&Clave::Personal(evento_id, cuenta));
         Ok(())
     }
 
     // ---------- Asistente ----------
 
-    /// Cobra el precio al comprador, paga al organizador y emite el boleto,
-    /// todo en la misma transacción. Falla si ya no quedan lugares.
+    /// Cobra el precio al comprador, paga al organizador, separa la comisión de
+    /// TrustTix y emite el boleto, todo en la misma transacción. Falla si ya no
+    /// quedan lugares.
     pub fn comprar(env: Env, comprador: Address, evento_id: u32) -> Result<u32, Error> {
         comprador.require_auth();
         let mut evento = leer_evento(&env, evento_id)?;
@@ -179,10 +236,13 @@ impl TrustTix {
             return Err(Error::Agotado);
         }
 
-        if evento.precio > 0 {
-            let token: Address = env.storage().instance().get(&Clave::Token).unwrap();
-            token::Client::new(&env, &token).transfer(&comprador, &evento.organizador, &evento.precio);
-        }
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            evento.precio,
+            comisiones(&env).compra,
+        );
 
         let id = siguiente(&env, Clave::TotalBoletos);
         let boleto = Boleto {
@@ -197,7 +257,14 @@ impl TrustTix {
         evento.vendidos += 1;
         guardar(&env, &Clave::Evento(evento_id), &evento);
 
-        Compra { evento: evento_id, boleto: id, comprador, precio: evento.precio }.publish(&env);
+        Compra {
+            evento: evento_id,
+            boleto: id,
+            comprador,
+            precio: evento.precio,
+            comision,
+        }
+        .publish(&env);
         Ok(id)
     }
 
@@ -220,7 +287,12 @@ impl TrustTix {
         quitar_de(&env, &de, boleto_id);
         agregar_a(&env, &a, boleto_id);
 
-        Transferencia { boleto: boleto_id, de, a }.publish(&env);
+        Transferencia {
+            boleto: boleto_id,
+            de,
+            a,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -248,7 +320,12 @@ impl TrustTix {
         boleto.usado_en = env.ledger().timestamp();
         guardar(&env, &Clave::Boleto(boleto_id), &boleto);
 
-        Entrada { boleto: boleto_id, evento: boleto.evento, personal }.publish(&env);
+        Entrada {
+            boleto: boleto_id,
+            evento: boleto.evento,
+            personal,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -263,11 +340,17 @@ impl TrustTix {
     }
 
     pub fn total_eventos(env: Env) -> u32 {
-        env.storage().instance().get(&Clave::TotalEventos).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&Clave::TotalEventos)
+            .unwrap_or(0)
     }
 
     pub fn total_boletos(env: Env) -> u32 {
-        env.storage().instance().get(&Clave::TotalBoletos).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&Clave::TotalBoletos)
+            .unwrap_or(0)
     }
 
     pub fn boletos_de(env: Env, cuenta: Address) -> Vec<u32> {
@@ -292,20 +375,68 @@ impl TrustTix {
     pub fn token(env: Env) -> Address {
         env.storage().instance().get(&Clave::Token).unwrap()
     }
+
+    pub fn admin(env: Env) -> Address {
+        admin(&env)
+    }
+
+    pub fn comisiones(env: Env) -> Comisiones {
+        comisiones(&env)
+    }
 }
 
 // ---------- Funciones internas ----------
 
+fn validar_comisiones(env: &Env, compra: u32, reventa: u32) -> Comisiones {
+    if compra > COMISION_MAXIMA || reventa > COMISION_MAXIMA {
+        panic_with_error!(env, Error::ComisionInvalida);
+    }
+    Comisiones { compra, reventa }
+}
+
+fn admin(env: &Env) -> Address {
+    env.storage().instance().get(&Clave::Admin).unwrap()
+}
+
+fn comisiones(env: &Env) -> Comisiones {
+    env.storage().instance().get(&Clave::Comisiones).unwrap()
+}
+
+/// Cobra `precio` a `de`: la comisión (en puntos base) va al administrador y
+/// el resto a `para`. Devuelve la comisión cobrada. Con precio 0 no mueve nada.
+fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) -> i128 {
+    if precio <= 0 {
+        return 0;
+    }
+    let token = token::Client::new(
+        env,
+        &env.storage()
+            .instance()
+            .get::<_, Address>(&Clave::Token)
+            .unwrap(),
+    );
+    let comision = precio * puntos as i128 / PUNTOS_BASE;
+    if comision > 0 {
+        token.transfer(de, admin(env), &comision);
+    }
+    token.transfer(de, para, &(precio - comision));
+    comision
+}
+
 fn siguiente(env: &Env, clave: Clave) -> u32 {
     let id: u32 = env.storage().instance().get(&clave).unwrap_or(0) + 1;
     env.storage().instance().set(&clave, &id);
-    env.storage().instance().extend_ttl(UMBRAL_TTL, EXTENDER_TTL);
+    env.storage()
+        .instance()
+        .extend_ttl(UMBRAL_TTL, EXTENDER_TTL);
     id
 }
 
 fn guardar<V: soroban_sdk::IntoVal<Env, soroban_sdk::Val>>(env: &Env, clave: &Clave, valor: &V) {
     env.storage().persistent().set(clave, valor);
-    env.storage().persistent().extend_ttl(clave, UMBRAL_TTL, EXTENDER_TTL);
+    env.storage()
+        .persistent()
+        .extend_ttl(clave, UMBRAL_TTL, EXTENDER_TTL);
 }
 
 fn leer_evento(env: &Env, id: u32) -> Result<Evento, Error> {
@@ -324,14 +455,22 @@ fn leer_boleto(env: &Env, id: u32) -> Result<Boleto, Error> {
 
 fn agregar_a(env: &Env, cuenta: &Address, boleto_id: u32) {
     let clave = Clave::BoletosDe(cuenta.clone());
-    let mut lista: Vec<u32> = env.storage().persistent().get(&clave).unwrap_or(Vec::new(env));
+    let mut lista: Vec<u32> = env
+        .storage()
+        .persistent()
+        .get(&clave)
+        .unwrap_or(Vec::new(env));
     lista.push_back(boleto_id);
     guardar(env, &clave, &lista);
 }
 
 fn quitar_de(env: &Env, cuenta: &Address, boleto_id: u32) {
     let clave = Clave::BoletosDe(cuenta.clone());
-    let lista: Vec<u32> = env.storage().persistent().get(&clave).unwrap_or(Vec::new(env));
+    let lista: Vec<u32> = env
+        .storage()
+        .persistent()
+        .get(&clave)
+        .unwrap_or(Vec::new(env));
     if let Some(i) = lista.first_index_of(boleto_id) {
         let mut lista = lista;
         lista.remove(i);

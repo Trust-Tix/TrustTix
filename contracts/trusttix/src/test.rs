@@ -6,12 +6,16 @@ use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{Address, Env, String};
 
 const PRECIO: i128 = 250_000_000; // 25 XLM
+/// Comisiones de TrustTix en puntos base: 3 % por compra y 2 % por reventa.
+const COMPRA: u32 = 300;
+const REVENTA: u32 = 200;
 
 struct Prueba<'a> {
     env: Env,
     tix: TrustTixClient<'a>,
     token: TokenClient<'a>,
     organizador: Address,
+    admin: Address,
 }
 
 fn preparar<'a>() -> Prueba<'a> {
@@ -22,12 +26,19 @@ fn preparar<'a>() -> Prueba<'a> {
     let activo = env.register_stellar_asset_contract_v2(emisor);
     let token_id = activo.address();
 
-    let tix_id = env.register(TrustTix, (token_id.clone(),));
+    let admin = Address::generate(&env);
+    let tix_id = env.register(TrustTix, (token_id.clone(), admin.clone(), COMPRA, REVENTA));
     let tix = TrustTixClient::new(&env, &tix_id);
     let token = TokenClient::new(&env, &token_id);
     let organizador = Address::generate(&env);
 
-    Prueba { env, tix, token, organizador }
+    Prueba {
+        env,
+        tix,
+        token,
+        organizador,
+        admin,
+    }
 }
 
 fn texto(env: &Env, t: &str) -> String {
@@ -60,8 +71,10 @@ fn comprar_cobra_paga_al_organizador_y_emite_el_boleto() {
     let boleto = p.tix.comprar(&comprador, &evento);
 
     assert_eq!(boleto, 1);
+    // 3 % para TrustTix y el resto para el organizador.
     assert_eq!(p.token.balance(&comprador), 1_000_000_000 - PRECIO);
-    assert_eq!(p.token.balance(&p.organizador), PRECIO);
+    assert_eq!(p.token.balance(&p.admin), 7_500_000);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO - 7_500_000);
 
     let b = p.tix.consultar_boleto(&boleto);
     assert_eq!(b.dueno, comprador);
@@ -184,7 +197,13 @@ fn validaciones_al_crear_y_consultar() {
     );
     assert_eq!(negativo, Err(Ok(Error::PrecioInvalido)));
 
-    assert_eq!(p.tix.try_consultar_evento(&99), Err(Ok(Error::EventoNoExiste)));
-    assert_eq!(p.tix.try_consultar_boleto(&99), Err(Ok(Error::BoletoNoExiste)));
+    assert_eq!(
+        p.tix.try_consultar_evento(&99),
+        Err(Ok(Error::EventoNoExiste))
+    );
+    assert_eq!(
+        p.tix.try_consultar_boleto(&99),
+        Err(Ok(Error::BoletoNoExiste))
+    );
     assert_eq!(p.tix.total_eventos(), 0);
 }
