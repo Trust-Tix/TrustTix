@@ -25,6 +25,8 @@ const EXTENDER_TTL: u32 = 30 * DIA;
 const PUNTOS_BASE: i128 = 10_000;
 /// Ninguna comisión puede pasar del 10 %, ni siquiera por decisión del administrador.
 const COMISION_MAXIMA: u32 = 1_000;
+/// Tope inicial de reventa de cada evento: 110 % del precio original.
+const TOPE_REVENTA_INICIAL: u32 = 11_000;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -40,6 +42,8 @@ pub enum Error {
     PrecioInvalido = 8,
     MismoDueno = 9,
     ComisionInvalida = 10,
+    SobreTope = 11,
+    NoEnReventa = 12,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -62,6 +66,8 @@ pub struct Evento {
     pub vendidos: u32,
     /// Precio en la unidad mínima del token de pago (stroops si es XLM).
     pub precio: i128,
+    /// Precio máximo de reventa, en puntos base sobre `precio` (11,000 = 110 %).
+    pub tope_reventa: u32,
 }
 
 #[contracttype]
@@ -86,6 +92,8 @@ enum Clave {
     Boleto(u32),
     Personal(u32, Address),
     BoletosDe(Address),
+    /// Precio al que el dueño ofrece el boleto en reventa.
+    Reventa(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -107,6 +115,20 @@ pub struct Compra {
     pub precio: i128,
     /// Parte del precio que fue a TrustTix.
     pub comision: i128,
+}
+
+#[contractevent]
+pub struct ReventaPublicada {
+    #[topic]
+    pub boleto: u32,
+    pub vendedor: Address,
+    pub precio: i128,
+}
+
+#[contractevent]
+pub struct ReventaCancelada {
+    #[topic]
+    pub boleto: u32,
 }
 
 #[contractevent]
@@ -195,6 +217,7 @@ impl TrustTix {
             capacidad,
             vendidos: 0,
             precio,
+            tope_reventa: TOPE_REVENTA_INICIAL,
         };
         guardar(&env, &Clave::Evento(id), &evento);
         EventoCreado {
@@ -286,6 +309,8 @@ impl TrustTix {
         guardar(&env, &Clave::Boleto(boleto_id), &boleto);
         quitar_de(&env, &de, boleto_id);
         agregar_a(&env, &a, boleto_id);
+        // Si estaba en reventa, la oferta era del dueño anterior: se retira.
+        retirar_reventa(&env, boleto_id);
 
         Transferencia {
             boleto: boleto_id,
@@ -293,6 +318,56 @@ impl TrustTix {
             a,
         }
         .publish(&env);
+        Ok(())
+    }
+
+    // ---------- Reventa ----------
+
+    /// El dueño ofrece su boleto a un precio que no puede pasar del tope del
+    /// evento. Publicarlo otra vez cambia el precio.
+    pub fn publicar_reventa(
+        env: Env,
+        boleto_id: u32,
+        vendedor: Address,
+        precio: i128,
+    ) -> Result<(), Error> {
+        vendedor.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
+        if boleto.dueno != vendedor {
+            return Err(Error::NoEsDueno);
+        }
+        if boleto.usado {
+            return Err(Error::YaUsado);
+        }
+        if precio < 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        let evento = leer_evento(&env, boleto.evento)?;
+        if precio > evento.precio * evento.tope_reventa as i128 / PUNTOS_BASE {
+            return Err(Error::SobreTope);
+        }
+
+        guardar(&env, &Clave::Reventa(boleto_id), &precio);
+        ReventaPublicada {
+            boleto: boleto_id,
+            vendedor,
+            precio,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// El dueño retira su boleto de la reventa.
+    pub fn cancelar_reventa(env: Env, boleto_id: u32, vendedor: Address) -> Result<(), Error> {
+        vendedor.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
+        if boleto.dueno != vendedor {
+            return Err(Error::NoEsDueno);
+        }
+        if !env.storage().persistent().has(&Clave::Reventa(boleto_id)) {
+            return Err(Error::NoEnReventa);
+        }
+        retirar_reventa(&env, boleto_id);
         Ok(())
     }
 
@@ -319,6 +394,8 @@ impl TrustTix {
         boleto.usado = true;
         boleto.usado_en = env.ledger().timestamp();
         guardar(&env, &Clave::Boleto(boleto_id), &boleto);
+        // Un boleto que ya entró no se puede seguir vendiendo.
+        retirar_reventa(&env, boleto_id);
 
         Entrada {
             boleto: boleto_id,
@@ -337,6 +414,14 @@ impl TrustTix {
 
     pub fn consultar_boleto(env: Env, boleto_id: u32) -> Result<Boleto, Error> {
         leer_boleto(&env, boleto_id)
+    }
+
+    /// Precio al que está en reventa un boleto.
+    pub fn consultar_reventa(env: Env, boleto_id: u32) -> Result<i128, Error> {
+        env.storage()
+            .persistent()
+            .get(&Clave::Reventa(boleto_id))
+            .ok_or(Error::NoEnReventa)
     }
 
     pub fn total_eventos(env: Env) -> u32 {
@@ -451,6 +536,15 @@ fn leer_boleto(env: &Env, id: u32) -> Result<Boleto, Error> {
         .persistent()
         .get(&Clave::Boleto(id))
         .ok_or(Error::BoletoNoExiste)
+}
+
+/// Quita la oferta de reventa de un boleto, si la hay.
+fn retirar_reventa(env: &Env, boleto_id: u32) {
+    let clave = Clave::Reventa(boleto_id);
+    if env.storage().persistent().has(&clave) {
+        env.storage().persistent().remove(&clave);
+        ReventaCancelada { boleto: boleto_id }.publish(env);
+    }
 }
 
 fn agregar_a(env: &Env, cuenta: &Address, boleto_id: u32) {
