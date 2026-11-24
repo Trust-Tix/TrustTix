@@ -126,6 +126,17 @@ pub struct ReventaPublicada {
 }
 
 #[contractevent]
+pub struct Reventa {
+    #[topic]
+    pub boleto: u32,
+    pub vendedor: Address,
+    pub comprador: Address,
+    pub precio: i128,
+    /// Parte del precio que fue a TrustTix.
+    pub comision: i128,
+}
+
+#[contractevent]
 pub struct ReventaCancelada {
     #[topic]
     pub boleto: u32,
@@ -368,6 +379,51 @@ impl TrustTix {
             return Err(Error::NoEnReventa);
         }
         retirar_reventa(&env, boleto_id);
+        Ok(())
+    }
+
+    /// Compra un boleto en reventa: paga al vendedor, separa la comisión de
+    /// TrustTix y cambia el dueño, todo en la misma transacción.
+    pub fn comprar_reventa(env: Env, boleto_id: u32, comprador: Address) -> Result<(), Error> {
+        comprador.require_auth();
+        let mut boleto = leer_boleto(&env, boleto_id)?;
+        let precio: i128 = env
+            .storage()
+            .persistent()
+            .get(&Clave::Reventa(boleto_id))
+            .ok_or(Error::NoEnReventa)?;
+        if boleto.usado {
+            return Err(Error::YaUsado);
+        }
+        let vendedor = boleto.dueno.clone();
+        if vendedor == comprador {
+            return Err(Error::MismoDueno);
+        }
+
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &vendedor,
+            precio,
+            comisiones(&env).reventa,
+        );
+
+        boleto.dueno = comprador.clone();
+        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
+        quitar_de(&env, &vendedor, boleto_id);
+        agregar_a(&env, &comprador, boleto_id);
+        env.storage()
+            .persistent()
+            .remove(&Clave::Reventa(boleto_id));
+
+        Reventa {
+            boleto: boleto_id,
+            vendedor,
+            comprador,
+            precio,
+            comision,
+        }
+        .publish(&env);
         Ok(())
     }
 
