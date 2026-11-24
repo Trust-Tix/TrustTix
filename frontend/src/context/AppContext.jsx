@@ -84,7 +84,7 @@ export function AppProvider({ children }) {
   // Mientras se crea y activa la billetera TrustTix, y el aviso de que quedó lista.
   const [preparando, setPreparando] = useState(false)
   const [avisoBilletera, setAvisoBilletera] = useState('')
-  const [eventos, setEventos] = useState([])
+  const [eventosEnRed, setEventosEnRed] = useState([])
   const [misBoletos, setMisBoletos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [errorRed, setErrorRed] = useState('')
@@ -112,20 +112,27 @@ export function AppProvider({ children }) {
 
   const metadatos = useMemo(() => ({ ...metaLocal, ...metaRemota }), [metaLocal, metaRemota])
 
+  // Lo que viene de la red se guarda tal cual; las portadas y demás datos de
+  // Supabase se le agregan después, sin volver a leer la red cuando llegan.
   const recargarEventos = useCallback(async () => {
     try {
       const total = await red.totalEventos()
       const lista = await Promise.all(
-        Array.from({ length: total }, (_, i) => i + 1).map(async (id) => armarEvento(id, await red.consultarEvento(id), metadatos)),
+        Array.from({ length: total }, (_, i) => i + 1).map(async (id) => ({ id, enRed: await red.consultarEvento(id) })),
       )
-      setEventos(lista.reverse())
+      setEventosEnRed(lista.reverse())
       setErrorRed('')
     } catch (e) {
       setErrorRed(`No pudimos leer la red de Stellar: ${e.message}`)
     } finally {
       setCargando(false)
     }
-  }, [metadatos])
+  }, [])
+
+  const eventos = useMemo(
+    () => eventosEnRed.map(({ id, enRed }) => armarEvento(id, enRed, metadatos)),
+    [eventosEnRed, metadatos],
+  )
 
   const recargarMisBoletos = useCallback(async (cuenta = billetera) => {
     if (!cuenta) {
