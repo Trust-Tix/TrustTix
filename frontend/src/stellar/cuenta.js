@@ -1,4 +1,4 @@
-import { Asset, BASE_FEE, Horizon, Operation, StrKey, TransactionBuilder } from '@stellar/stellar-sdk'
+import { Asset, BASE_FEE, Horizon, Memo, Operation, StrKey, TransactionBuilder } from '@stellar/stellar-sdk'
 import { FRIENDBOT_URL, HORIZON_URL, RED } from './config'
 import { firmar } from './billetera'
 
@@ -39,14 +39,21 @@ export function activarConFriendbot(direccion) {
   return activaciones.get(direccion)
 }
 
-// Envía XLM desde la billetera activa. Si el destino no existe todavía, lo crea.
-export async function enviarXLM(origen, destino, monto) {
+// La red acepta memos de texto de hasta 28 bytes (una letra con acento ocupa dos).
+export const MEMO_MAXIMO = 28
+export const bytesMemo = (memo) => new TextEncoder().encode(memo).length
+
+// Envía XLM desde la billetera activa, con una nota (memo) opcional que queda
+// pública en la transacción. Si el destino no existe todavía, lo crea.
+export async function enviarXLM(origen, destino, monto, memo = '') {
   const para = destino.trim()
   if (!StrKey.isValidEd25519PublicKey(para)) throw new Error('La cuenta destino no es válida. Empieza con G y tiene 56 caracteres.')
   if (para === origen) throw new Error('No puedes enviarte XLM a ti mismo.')
   const cantidad = Number(monto)
   if (!(cantidad > 0)) throw new Error('El monto debe ser mayor que cero.')
   const texto = cantidad.toFixed(7)
+  const nota = memo.trim()
+  if (bytesMemo(nota) > MEMO_MAXIMO) throw new Error(`La nota no puede pasar de ${MEMO_MAXIMO} caracteres.`)
 
   const cuenta = await horizon.loadAccount(origen)
   const existe = await horizon.loadAccount(para).then(() => true, (e) => (noExiste(e) ? false : Promise.reject(e)))
@@ -55,7 +62,9 @@ export async function enviarXLM(origen, destino, monto) {
   const operacion = existe
     ? Operation.payment({ destination: para, asset: Asset.native(), amount: texto })
     : Operation.createAccount({ destination: para, startingBalance: texto })
-  const tx = new TransactionBuilder(cuenta, { fee: BASE_FEE, networkPassphrase: RED }).addOperation(operacion).setTimeout(120).build()
+  const constructor = new TransactionBuilder(cuenta, { fee: BASE_FEE, networkPassphrase: RED }).addOperation(operacion).setTimeout(120)
+  if (nota) constructor.addMemo(Memo.text(nota))
+  const tx = constructor.build()
 
   const { signedTxXdr } = await firmar(tx.toXDR(), { address: origen })
   try {

@@ -5,7 +5,7 @@ import CodigoCuenta from '../components/CodigoCuenta'
 import ElegirBilletera from '../components/ElegirBilletera'
 import { IconoExterno } from '../components/Iconos'
 import { billeteraEnCuenta, claveSecretaPropia } from '../stellar/billetera'
-import { activarConFriendbot, enviarXLM, movimientos } from '../stellar/cuenta'
+import { MEMO_MAXIMO, activarConFriendbot, bytesMemo, enviarXLM, movimientos } from '../stellar/cuenta'
 import EscanerCuenta from '../components/EscanerCuenta'
 import { enlaceCuenta, enlaceTx } from '../stellar/config'
 import { abreviar, fechaHora } from '../utils/formato'
@@ -18,7 +18,7 @@ export default function Billetera() {
   const [lista, setLista] = useState(null)
   const [error, setError] = useState('')
   const [activando, setActivando] = useState(false)
-  const [envio, setEnvio] = useState({ destino: '', monto: '' })
+  const [envio, setEnvio] = useState({ destino: '', monto: '', memo: '' })
   const [enviando, setEnviando] = useState(false)
   const [aviso, setAviso] = useState(null)
   const [verClave, setVerClave] = useState(false)
@@ -60,9 +60,10 @@ export default function Billetera() {
     setEnviando(true)
     setAviso(null)
     try {
-      const hash = await enviarXLM(billetera, envio.destino, envio.monto)
-      setAviso({ tipo: 'exito', texto: `Enviaste ${envio.monto} XLM a ${abreviar(envio.destino.trim())}.`, hash })
-      setEnvio({ destino: '', monto: '' })
+      const hash = await enviarXLM(billetera, envio.destino, envio.monto, envio.memo)
+      const nota = envio.memo.trim() ? ` con la nota "${envio.memo.trim()}"` : ''
+      setAviso({ tipo: 'exito', texto: `Enviaste ${envio.monto} XLM a ${abreviar(envio.destino.trim())}${nota}.`, hash })
+      setEnvio({ destino: '', monto: '', memo: '' })
       await cargar()
     } catch (err) {
       setAviso({ tipo: 'error', texto: err.message })
@@ -189,6 +190,19 @@ export default function Billetera() {
                 value={envio.monto}
                 onChange={(e) => setEnvio((v) => ({ ...v, monto: e.target.value }))}
               />
+            </label>
+            <label className="campo">
+              <span>Nota (opcional)</span>
+              <input
+                value={envio.memo}
+                onChange={(e) => setEnvio((v) => ({ ...v, memo: e.target.value }))}
+                placeholder="Ej. un código de pago"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <small className={bytesMemo(envio.memo.trim()) > MEMO_MAXIMO ? 'nota alerta--error' : 'nota'}>
+                Queda pública en la transacción. Máximo {MEMO_MAXIMO} caracteres ({bytesMemo(envio.memo.trim())} de {MEMO_MAXIMO}).
+              </small>
             </label>
             <button type="submit" className="boton boton--claro" disabled={enviando || !envio.destino.trim() || !envio.monto || saldo === null}>
               {enviando ? (integrada ? 'Enviando…' : 'Confirma en tu billetera…') : 'Enviar'}
