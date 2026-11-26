@@ -5,6 +5,7 @@ import Encabezado from '../components/Encabezado'
 import Portada from '../components/Portada'
 import Disponibilidad from '../components/Disponibilidad'
 import Modal from '../components/Modal'
+import Reventas from '../components/Reventas'
 import { IconoCalendario, IconoEscudo, IconoUbicacion } from '../components/Iconos'
 import { abreviar, diaMes, fechaLarga, numero, precio } from '../utils/formato'
 import { enlaceCuenta } from '../stellar/config'
@@ -179,6 +180,8 @@ export default function DetalleEvento() {
               </span>
             </p>
           </section>
+
+          {!evento.cancelado && <Reventas evento={evento} />}
 
           <div className="detalle__compra">
             <div className="fecha-grande">

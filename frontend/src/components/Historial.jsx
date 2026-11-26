@@ -8,6 +8,7 @@ const TEXTO = {
   transferencia: 'Transferencia',
   entrada: 'Entrada registrada',
   reventa: 'Publicado en reventa',
+  'compra-reventa': 'Compra en reventa',
   'reventa-cancelada': 'Retirado de la reventa',
 }
 

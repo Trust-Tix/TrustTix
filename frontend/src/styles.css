@@ -1082,7 +1082,8 @@ a.billetera--conectada { cursor: pointer; }
 .detalle__acerca { order: 4; }
 .detalle__ubicacion { order: 5; }
 .detalle__lugares { order: 6; }
-.detalle__compra { order: 7; }
+.detalle__reventa { order: 7; }
+.detalle__compra { order: 8; }
 
 .detalle__cabecera,
 .detalle__bloque,
@@ -1254,6 +1255,40 @@ a.billetera--conectada { cursor: pointer; }
 
 .detalle__compra > .boton,
 .detalle__compra > .billetera { grid-column: 1 / -1; }
+
+/* Boletos en reventa: folio y vendedor, precio y botón en una fila. */
+.reventas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reventas__fila {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radio-chico);
+  background: var(--superficie-2);
+}
+
+.reventas__fila > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reventas__fila small {
+  overflow: hidden;
+  color: var(--texto-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 
 .fecha-grande {
   display: flex;

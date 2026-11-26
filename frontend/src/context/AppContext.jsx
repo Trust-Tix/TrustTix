@@ -302,6 +302,19 @@ export function AppProvider({ children }) {
     [billetera, anotar, recargarMisBoletos, recargarSaldo],
   )
 
+  // Compra en reventa: igual que comprar, prepara la billetera TrustTix si hace falta.
+  const comprarReventa = useCallback(
+    async (boletoId) => {
+      if (!usuarioId && !billetera) throw new Error('Inicia sesión para comprar.')
+      const cuenta = await prepararBilletera()
+      const { hash } = await red.comprarReventa(cuenta, boletoId)
+      anotar(boletoId, 'compra-reventa', hash)
+      Promise.all([recargarMisBoletos(cuenta), recargarSaldo(cuenta)]).catch(() => {})
+      return hash
+    },
+    [usuarioId, billetera, prepararBilletera, anotar, recargarMisBoletos, recargarSaldo],
+  )
+
   // El dueño pone su boleto en reventa (o le cambia el precio) y lo retira.
   const publicarReventa = useCallback(
     async (boletoId, precio) => {
@@ -390,6 +403,18 @@ export function AppProvider({ children }) {
     return todos.filter((b) => b.eventoId === eventoId)
   }, [])
 
+  // Boletos de un evento que sus dueños tienen a la venta, del más barato al más caro.
+  const reventasDeEvento = useCallback(
+    async (eventoId) => {
+      const vigentes = (await boletosDeEvento(eventoId)).filter((b) => b.estado === 'valido')
+      const ofertas = await Promise.all(
+        vigentes.map(async (boleto) => ({ boleto, precio: await red.consultarReventa(boleto.id) })),
+      )
+      return ofertas.filter((o) => o.precio != null).sort((a, b) => (a.precio < b.precio ? -1 : a.precio > b.precio ? 1 : 0))
+    },
+    [boletosDeEvento],
+  )
+
   const crearEvento = useCallback(
     async (datos) => {
       if (!billetera) throw new Error('Conecta tu billetera.')
@@ -469,6 +494,8 @@ export function AppProvider({ children }) {
       recargarMisBoletos,
       comprar,
       transferir,
+      comprarReventa,
+      reventasDeEvento,
       publicarReventa,
       cancelarReventa,
       consultarBoleto,
@@ -480,7 +507,7 @@ export function AppProvider({ children }) {
       crearEvento,
       cambiarPortada,
     }),
-    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, cartelera, comisiones, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, publicarReventa, cancelarReventa, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
+    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, cartelera, comisiones, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, comprarReventa, reventasDeEvento, publicarReventa, cancelarReventa, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
   )
 
   return <AppContext.Provider value={valor}>{children}</AppContext.Provider>

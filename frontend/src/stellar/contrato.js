@@ -183,6 +183,10 @@ export const publicarReventa = (vendedor, boletoId, precio) =>
 export const cancelarReventa = (vendedor, boletoId) =>
   escribir(vendedor, 'cancelar_reventa', { boleto_id: boletoId, vendedor })
 
+// Paga al vendedor, separa la comisión de TrustTix y cambia el dueño en una transacción.
+export const comprarReventa = (comprador, boletoId) =>
+  escribir(comprador, 'comprar_reventa', { boleto_id: boletoId, comprador })
+
 export const registrarEntrada = (personal, boletoId) =>
   escribir(personal, 'registrar_entrada', { boleto_id: boletoId, personal })
 
