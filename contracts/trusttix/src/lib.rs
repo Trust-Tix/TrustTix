@@ -9,6 +9,8 @@
 //!    ocurren en la misma transacción.
 //! 4. Solo el personal autorizado por el organizador registra entradas, y cada
 //!    boleto entra una sola vez.
+//! 5. Un evento cancelado no vende, no revende ni registra entradas, y el
+//!    organizador devuelve el precio de cada boleto a su dueño.
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
@@ -49,6 +51,9 @@ pub enum Error {
     SobreTope = 11,
     NoEnReventa = 12,
     TopeInvalido = 13,
+    EventoCancelado = 14,
+    EventoActivo = 15,
+    YaReembolsado = 16,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -73,6 +78,7 @@ pub struct Evento {
     pub precio: i128,
     /// Precio máximo de reventa, en puntos base sobre `precio` (11,000 = 110 %).
     pub tope_reventa: u32,
+    pub cancelado: bool,
 }
 
 #[contracttype]
@@ -83,6 +89,8 @@ pub struct Boleto {
     pub usado: bool,
     /// Marca de tiempo del ledger en que entró (0 si no se ha usado).
     pub usado_en: u64,
+    /// El organizador ya devolvió su precio porque el evento se canceló.
+    pub reembolsado: bool,
 }
 
 #[contracttype]
@@ -153,6 +161,22 @@ pub struct TopeReventaActualizado {
     pub evento: u32,
     /// Nuevo tope en puntos base sobre el precio original.
     pub tope: u32,
+}
+
+#[contractevent]
+pub struct Cancelacion {
+    #[topic]
+    pub evento: u32,
+    pub vendidos: u32,
+}
+
+#[contractevent]
+pub struct Reembolso {
+    #[topic]
+    pub boleto: u32,
+    pub evento: u32,
+    pub dueno: Address,
+    pub monto: i128,
 }
 
 #[contractevent]
@@ -242,6 +266,7 @@ impl TrustTix {
             vendidos: 0,
             precio,
             tope_reventa: TOPE_REVENTA_INICIAL,
+            cancelado: false,
         };
         guardar(&env, &Clave::Evento(id), &evento);
         EventoCreado {
@@ -267,6 +292,9 @@ impl TrustTix {
     pub fn fijar_tope_reventa(env: Env, evento_id: u32, tope: u32) -> Result<(), Error> {
         let mut evento = leer_evento(&env, evento_id)?;
         evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
         if !(TOPE_REVENTA_MINIMO..=TOPE_REVENTA_MAXIMO).contains(&tope) {
             return Err(Error::TopeInvalido);
         }
@@ -278,6 +306,63 @@ impl TrustTix {
         }
         .publish(&env);
         Ok(())
+    }
+
+    /// El organizador cancela su evento: desde ese momento no se vende, no se
+    /// revende ni se registran entradas. Los boletos se reembolsan uno por uno
+    /// con `reembolsar`.
+    pub fn cancelar_evento(env: Env, evento_id: u32) -> Result<(), Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        evento.cancelado = true;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        Cancelacion {
+            evento: evento_id,
+            vendidos: evento.vendidos,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// En un evento cancelado, el organizador devuelve el precio original del
+    /// boleto a su dueño actual. Cada boleto se reembolsa una sola vez y queda
+    /// sin validez para entrar, transferir o revender.
+    pub fn reembolsar(env: Env, boleto_id: u32) -> Result<i128, Error> {
+        let mut boleto = leer_boleto(&env, boleto_id)?;
+        let evento = leer_evento(&env, boleto.evento)?;
+        evento.organizador.require_auth();
+        if !evento.cancelado {
+            return Err(Error::EventoActivo);
+        }
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
+        }
+        if boleto.usado {
+            return Err(Error::YaUsado);
+        }
+
+        if evento.precio > 0 {
+            token::Client::new(&env, &token_de_pago(&env)).transfer(
+                &evento.organizador,
+                &boleto.dueno,
+                &evento.precio,
+            );
+        }
+        boleto.reembolsado = true;
+        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
+        retirar_reventa(&env, boleto_id);
+
+        Reembolso {
+            boleto: boleto_id,
+            evento: boleto.evento,
+            dueno: boleto.dueno,
+            monto: evento.precio,
+        }
+        .publish(&env);
+        Ok(evento.precio)
     }
 
     /// El organizador retira la autorización de una cuenta.
@@ -298,6 +383,9 @@ impl TrustTix {
     pub fn comprar(env: Env, comprador: Address, evento_id: u32) -> Result<u32, Error> {
         comprador.require_auth();
         let mut evento = leer_evento(&env, evento_id)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
         if evento.vendidos >= evento.capacidad {
             return Err(Error::Agotado);
         }
@@ -316,6 +404,7 @@ impl TrustTix {
             dueno: comprador.clone(),
             usado: false,
             usado_en: 0,
+            reembolsado: false,
         };
         guardar(&env, &Clave::Boleto(id), &boleto);
         agregar_a(&env, &comprador, id);
@@ -343,6 +432,9 @@ impl TrustTix {
         }
         if boleto.usado {
             return Err(Error::YaUsado);
+        }
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
         }
         if de == a {
             return Err(Error::MismoDueno);
@@ -382,10 +474,16 @@ impl TrustTix {
         if boleto.usado {
             return Err(Error::YaUsado);
         }
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
+        }
         if precio < 0 {
             return Err(Error::PrecioInvalido);
         }
         let evento = leer_evento(&env, boleto.evento)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
         if precio > precio_maximo(&evento) {
             return Err(Error::SobreTope);
         }
@@ -427,8 +525,12 @@ impl TrustTix {
         if boleto.usado {
             return Err(Error::YaUsado);
         }
+        let evento = leer_evento(&env, boleto.evento)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
         // Si el organizador bajó el tope después de publicarse, la oferta ya no vale.
-        if precio > precio_maximo(&leer_evento(&env, boleto.evento)?) {
+        if precio > precio_maximo(&evento) {
             return Err(Error::SobreTope);
         }
         let vendedor = boleto.dueno.clone();
@@ -479,8 +581,14 @@ impl TrustTix {
         if !autorizado {
             return Err(Error::NoAutorizado);
         }
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
         if boleto.usado {
             return Err(Error::YaUsado);
+        }
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
         }
 
         boleto.usado = true;
@@ -550,7 +658,7 @@ impl TrustTix {
     }
 
     pub fn token(env: Env) -> Address {
-        env.storage().instance().get(&Clave::Token).unwrap()
+        token_de_pago(&env)
     }
 
     pub fn admin(env: Env) -> Address {
@@ -579,19 +687,17 @@ fn comisiones(env: &Env) -> Comisiones {
     env.storage().instance().get(&Clave::Comisiones).unwrap()
 }
 
+fn token_de_pago(env: &Env) -> Address {
+    env.storage().instance().get(&Clave::Token).unwrap()
+}
+
 /// Cobra `precio` a `de`: la comisión (en puntos base) va al administrador y
 /// el resto a `para`. Devuelve la comisión cobrada. Con precio 0 no mueve nada.
 fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) -> i128 {
     if precio <= 0 {
         return 0;
     }
-    let token = token::Client::new(
-        env,
-        &env.storage()
-            .instance()
-            .get::<_, Address>(&Clave::Token)
-            .unwrap(),
-    );
+    let token = token::Client::new(env, &token_de_pago(env));
     let comision = precio * puntos as i128 / PUNTOS_BASE;
     if comision > 0 {
         token.transfer(de, admin(env), &comision);

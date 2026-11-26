@@ -419,6 +419,106 @@ fn el_organizador_fija_el_tope_de_reventa() {
     );
 }
 
+// ---------- Cancelación y reembolso ----------
+
+#[test]
+fn un_evento_cancelado_no_vende_no_revende_ni_registra_entradas() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    p.tix.publicar_reventa(&boleto, &vendedor, &PRECIO);
+
+    p.tix.cancelar_evento(&evento);
+    // Lo firma el organizador.
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert!(p.tix.consultar_evento(&evento).cancelado);
+
+    let comprador = con_saldo(&p, PRECIO);
+    assert_eq!(
+        p.tix.try_comprar(&comprador, &evento),
+        Err(Ok(Error::EventoCancelado))
+    );
+    assert_eq!(
+        p.tix.try_comprar_reventa(&boleto, &comprador),
+        Err(Ok(Error::EventoCancelado))
+    );
+    assert_eq!(
+        p.tix.try_publicar_reventa(&boleto, &vendedor, &PRECIO),
+        Err(Ok(Error::EventoCancelado))
+    );
+    assert_eq!(
+        p.tix.try_registrar_entrada(&boleto, &p.organizador),
+        Err(Ok(Error::EventoCancelado))
+    );
+    assert_eq!(
+        p.tix.try_fijar_tope_reventa(&evento, &12_000),
+        Err(Ok(Error::EventoCancelado))
+    );
+    // No se cobró nada a quien intentó comprar.
+    assert_eq!(p.token.balance(&comprador), PRECIO);
+    // Cancelar dos veces se rechaza.
+    assert_eq!(
+        p.tix.try_cancelar_evento(&evento),
+        Err(Ok(Error::EventoCancelado))
+    );
+}
+
+#[test]
+fn el_reembolso_devuelve_el_precio_al_dueno_actual_una_sola_vez() {
+    let p = preparar();
+    let (boleto, comprador) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    // Lo regaló antes de la cancelación: el reembolso es para quien lo tiene.
+    let amigo = Address::generate(&p.env);
+    p.tix.transferir(&boleto, &comprador, &amigo);
+
+    // Mientras el evento siga en pie no hay reembolsos.
+    assert_eq!(p.tix.try_reembolsar(&boleto), Err(Ok(Error::EventoActivo)));
+
+    p.tix.cancelar_evento(&evento);
+    // El organizador recibió el 97 %; para devolver el 100 % pone la diferencia.
+    StellarAssetClient::new(&p.env, &p.token.address).mint(&p.organizador, &7_500_000);
+    let monto = p.tix.reembolsar(&boleto);
+    // Lo paga y lo firma el organizador.
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+
+    assert_eq!(monto, PRECIO);
+    assert_eq!(p.token.balance(&amigo), PRECIO);
+    assert_eq!(p.token.balance(&p.organizador), 0);
+    assert!(p.tix.consultar_boleto(&boleto).reembolsado);
+
+    // Un boleto reembolsado ya no se reembolsa, ni se transfiere, ni se revende.
+    assert_eq!(p.tix.try_reembolsar(&boleto), Err(Ok(Error::YaReembolsado)));
+    assert_eq!(
+        p.tix.try_transferir(&boleto, &amigo, &comprador),
+        Err(Ok(Error::YaReembolsado))
+    );
+    assert_eq!(
+        p.tix.try_publicar_reventa(&boleto, &amigo, &PRECIO),
+        Err(Ok(Error::YaReembolsado))
+    );
+}
+
+#[test]
+fn un_boleto_usado_o_gratis_no_mueve_dinero_al_reembolsar() {
+    let p = preparar();
+    let evento = crear(&p, 5, 0);
+    let fue = Address::generate(&p.env);
+    let no_fue = Address::generate(&p.env);
+    let usado = p.tix.comprar(&fue, &evento);
+    let gratis = p.tix.comprar(&no_fue, &evento);
+    p.tix.registrar_entrada(&usado, &p.organizador);
+
+    p.tix.cancelar_evento(&evento);
+
+    // Quien ya entró no recibe reembolso.
+    assert_eq!(p.tix.try_reembolsar(&usado), Err(Ok(Error::YaUsado)));
+    // Un boleto gratis se marca como reembolsado sin transferir nada.
+    assert_eq!(p.tix.reembolsar(&gratis), 0);
+    assert!(p.tix.consultar_boleto(&gratis).reembolsado);
+    assert_eq!(p.token.balance(&no_fue), 0);
+}
+
 #[test]
 fn validaciones_al_crear_y_consultar() {
     let p = preparar();
