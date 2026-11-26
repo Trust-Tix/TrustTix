@@ -152,6 +152,15 @@ export const consultarEvento = (id) => leer('consultar_evento', { evento_id: id 
 export const consultarBoleto = (id) => leer('consultar_boleto', { boleto_id: id })
 export const boletosDe = (cuenta) => leer('boletos_de', { cuenta }).then((l) => l.map(Number))
 export const esPersonal = (eventoId, cuenta) => leer('es_personal', { evento_id: eventoId, cuenta })
+// Precio de reventa de un boleto en stroops, o null si no está a la venta.
+export const consultarReventa = (id) =>
+  leer('consultar_reventa', { boleto_id: id }).then(
+    (p) => BigInt(p),
+    (e) => {
+      if (e.message === MENSAJES[12]) return null
+      throw e
+    },
+  )
 // Comisiones vigentes de TrustTix en puntos base: { compra: 300, reventa: 200 }.
 export const comisiones = () =>
   leer('comisiones').then((c) => ({ compra: Number(c.compra), reventa: Number(c.reventa) }))
@@ -166,6 +175,13 @@ export const comprar = (comprador, eventoId) =>
 
 export const transferir = (de, boletoId, a) =>
   escribir(de, 'transferir', { boleto_id: boletoId, de, a })
+
+// Publicar otra vez un boleto que ya está en reventa solo cambia su precio.
+export const publicarReventa = (vendedor, boletoId, precio) =>
+  escribir(vendedor, 'publicar_reventa', { boleto_id: boletoId, vendedor, precio })
+
+export const cancelarReventa = (vendedor, boletoId) =>
+  escribir(vendedor, 'cancelar_reventa', { boleto_id: boletoId, vendedor })
 
 export const registrarEntrada = (personal, boletoId) =>
   escribir(personal, 'registrar_entrada', { boleto_id: boletoId, personal })

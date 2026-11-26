@@ -7,6 +7,8 @@ const TEXTO = {
   compra: 'Compra',
   transferencia: 'Transferencia',
   entrada: 'Entrada registrada',
+  reventa: 'Publicado en reventa',
+  'reventa-cancelada': 'Retirado de la reventa',
 }
 
 // Movimientos del boleto hechos desde este navegador, cada uno con su

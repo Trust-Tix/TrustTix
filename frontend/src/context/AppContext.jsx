@@ -302,15 +302,39 @@ export function AppProvider({ children }) {
     [billetera, anotar, recargarMisBoletos, recargarSaldo],
   )
 
+  // El dueño pone su boleto en reventa (o le cambia el precio) y lo retira.
+  const publicarReventa = useCallback(
+    async (boletoId, precio) => {
+      if (!billetera) throw new Error('Conecta tu billetera.')
+      const { hash } = await red.publicarReventa(billetera, boletoId, precio)
+      anotar(boletoId, 'reventa', hash)
+      return hash
+    },
+    [billetera, anotar],
+  )
+
+  const cancelarReventa = useCallback(
+    async (boletoId) => {
+      if (!billetera) throw new Error('Conecta tu billetera.')
+      const { hash } = await red.cancelarReventa(billetera, boletoId)
+      anotar(boletoId, 'reventa-cancelada', hash)
+      return hash
+    },
+    [billetera, anotar],
+  )
+
   // consultar_boleto: lectura pública, no requiere billetera.
   const consultarBoleto = useCallback(
     async (boletoId) => {
       try {
         const boleto = armarBoleto(boletoId, await red.consultarBoleto(boletoId))
-        const evento =
+        const [evento, reventa] = await Promise.all([
           eventos.find((ev) => ev.id === boleto.eventoId) ??
-          armarEvento(boleto.eventoId, await red.consultarEvento(boleto.eventoId), metadatos)
-        return { boleto, evento }
+            red.consultarEvento(boleto.eventoId).then((enRed) => armarEvento(boleto.eventoId, enRed, metadatos)),
+          // Precio en stroops si su dueño lo tiene a la venta, o null.
+          boleto.estado === 'valido' ? red.consultarReventa(boletoId).catch(() => null) : null,
+        ])
+        return { boleto, evento, reventa }
       } catch (e) {
         if (/no existe/i.test(e.message)) return null
         throw e
@@ -445,6 +469,8 @@ export function AppProvider({ children }) {
       recargarMisBoletos,
       comprar,
       transferir,
+      publicarReventa,
+      cancelarReventa,
       consultarBoleto,
       registrarEntrada,
       esPersonal,
@@ -454,7 +480,7 @@ export function AppProvider({ children }) {
       crearEvento,
       cambiarPortada,
     }),
-    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, cartelera, comisiones, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
+    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, cartelera, comisiones, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, publicarReventa, cancelarReventa, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
   )
 
   return <AppContext.Provider value={valor}>{children}</AppContext.Provider>

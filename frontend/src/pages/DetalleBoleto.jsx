@@ -5,6 +5,7 @@ import { useBoleto } from '../hooks/useBoleto'
 import Encabezado from '../components/Encabezado'
 import Portada from '../components/Portada'
 import Historial from '../components/Historial'
+import Revender from '../components/Revender'
 import { IconoEnviar, IconoExterno, IconoUbicacion } from '../components/Iconos'
 import { enlaceTx } from '../stellar/config'
 import { abreviar, diaMes, fechaHora, folio } from '../utils/formato'
@@ -13,7 +14,7 @@ export default function DetalleBoleto() {
   const { id } = useParams()
   const { state } = useLocation()
   const { billetera } = useApp()
-  const { cargando, datos, error } = useBoleto(Number(id))
+  const { cargando, datos, error, recargar } = useBoleto(Number(id))
 
   if (cargando && !datos) {
     return (
@@ -33,7 +34,7 @@ export default function DetalleBoleto() {
     )
   }
 
-  const { boleto, evento } = datos
+  const { boleto, evento, reventa } = datos
   const esMio = boleto.dueno === billetera
   const usado = boleto.estado === 'usado'
   const reembolsado = boleto.estado === 'reembolsado'
@@ -111,6 +112,11 @@ export default function DetalleBoleto() {
             )}
             <Link to={`/eventos/${evento.id}`} className="boton boton--claro">Ver evento</Link>
           </div>
+
+          {/* Los boletos gratis se regalan con Transferir; la reventa es para los de pago. */}
+          {esMio && vigente && !evento.cancelado && evento.precio > 0n && (
+            <Revender boleto={boleto} evento={evento} reventa={reventa} alCambiar={recargar} />
+          )}
 
           <section className="tarjeta">
             <h3 className="tarjeta__titulo">Registro del boleto</h3>
