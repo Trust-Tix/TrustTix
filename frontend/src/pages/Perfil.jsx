@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
 import BotonBilletera from '../components/BotonBilletera'
 import CodigoCuenta from '../components/CodigoCuenta'
-import { IconoAyuda, IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
+import { IconoAyuda, IconoBilletera, IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
 import { enlaceContrato } from '../stellar/config'
 import { abreviar } from '../utils/formato'
 import { PORTAL, urlPortal } from '../portal'
@@ -83,6 +83,12 @@ export default function Perfil() {
           <Link to="/verificar" className="menu__opcion">
             <IconoEscudo />
             <span><strong>Verificar un boleto</strong><small>Consulta en la red quién es el dueño antes de comprar en reventa</small></span>
+          </Link>
+        )}
+        {PORTAL === 'app' && (
+          <Link to="/canjear" className="menu__opcion">
+            <IconoBilletera />
+            <span><strong>Canjear un código</strong><small>Recibe XLM de prueba en tu billetera con un código promocional</small></span>
           </Link>
         )}
         {PORTAL === 'app' && (

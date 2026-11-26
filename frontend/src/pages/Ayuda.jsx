@@ -32,6 +32,15 @@ const PREGUNTAS = [
     ),
   },
   {
+    pregunta: 'Tengo un código promocional. ¿Dónde lo uso?',
+    respuesta: (
+      <>
+        En <Link to="/canjear">Canjear</Link>: conecta tu billetera, escribe el código y la bóveda de TrustTix te deposita
+        el premio en una sola transacción. Cada billetera canjea un código una vez.
+      </>
+    ),
+  },
+  {
     pregunta: '¿Cómo compro un boleto?',
     respuesta: (
       <>
