@@ -1,6 +1,6 @@
 [
   {
-    "evento_id": 1,
+    "nombre": "Caifanes en concierto",
     "imagen": "CaifanesBanner.jpg",
     "categoria": "Conciertos",
     "ciudad": "Cuernavaca, Mor.",
@@ -11,7 +11,7 @@
     "descripcion": "Caifanes regresa a Cuernavaca con un recorrido por sus discos clásicos. Acceso general, puertas abren a las 20:00."
   },
   {
-    "evento_id": 2,
+    "nombre": "AWS Summit Mexico City",
     "imagen": "AWSBanner.webp",
     "categoria": "Eventos",
     "ciudad": "Ciudad de México",
@@ -22,7 +22,7 @@
     "descripcion": "Un día completo de conferencias, talleres y demostraciones sobre nube, datos e inteligencia artificial."
   },
   {
-    "evento_id": 3,
+    "nombre": "GOYA HACK · UNAM",
     "imagen": "GoyaHackBanner.jpg",
     "categoria": "Eventos",
     "ciudad": "Ciudad de México",
@@ -34,7 +34,7 @@
     "descripcion": "Hackathon de seis días para construir sobre Stellar. Mentorías, premios y networking con el ecosistema."
   },
   {
-    "evento_id": 4,
+    "nombre": "Bruno Mars en concierto",
     "imagen": "BrunoMarsBanner.jpg",
     "categoria": "Conciertos",
     "ciudad": "Ciudad de México",
@@ -45,7 +45,7 @@
     "descripcion": "Bruno Mars regresa a la Ciudad de México con The Romantic Tour. Invitado especial: Anderson .Paak como DJ Pee.Wee."
   },
   {
-    "evento_id": 5,
+    "nombre": "El Rey León, el musical",
     "imagen": "ReyLeonBanner.avif",
     "categoria": "Teatro",
     "ciudad": "Ciudad de México",
@@ -54,5 +54,13 @@
     "lng": -99.20389,
     "organizador_nombre": "OCESA Teatro",
     "descripcion": "La producción de Disney llega al Teatro Telcel con vestuario, música y escenografía de Broadway."
+  },
+  {
+    "nombre": "Noche de reventa justa",
+    "categoria": "Conciertos",
+    "ciudad": "Cuernavaca, Mor.",
+    "direccion": "Av. Morelos 271, Centro, 62000 Cuernavaca, Mor.",
+    "organizador_nombre": "TrustTix",
+    "descripcion": "Concierto acústico en el Jardín Borda para estrenar la reventa justa: si ya no puedes ir, revende tu boleto aquí mismo, nunca arriba del tope que fija el organizador."
   }
 ]
