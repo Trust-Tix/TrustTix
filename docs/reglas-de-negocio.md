@@ -1,10 +1,10 @@
 # Reglas de negocio de TrustTix
 
-Este documento explica, sin código, cómo se cobra y se reparte el dinero en TrustTix: la compra de un boleto, la reventa y las comisiones. Está escrito para organizadores e inversionistas.
+Este documento explica, sin código, cómo se cobra y se reparte el dinero en TrustTix: la compra de un boleto, la reventa, las comisiones y qué pasa si se cancela un evento. Está escrito para organizadores e inversionistas.
 
 Estas reglas no dependen de la buena voluntad de nadie: las hace cumplir el contrato de TrustTix en la red Stellar. Si una operación rompe una regla, la red la rechaza completa y no se mueve dinero.
 
-**Estado:** son las reglas del contrato versión 2, que se publica en Stellar Testnet (red de prueba, sin dinero real). La app de trusttix.xyz todavía usa la versión 1, que no tiene comisión ni reventa.
+**Estado:** son las reglas del contrato versión 2, publicado en Stellar Testnet (red de prueba, sin dinero real): `CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4`. La app de trusttix.xyz ya lo usa.
 
 ## Resumen
 
@@ -13,9 +13,10 @@ Estas reglas no dependen de la buena voluntad de nadie: las hace cumplir el cont
 | Comisión de TrustTix en cada compra | 3 % del precio |
 | Comisión de TrustTix en cada reventa | 2 % del precio de reventa |
 | Comisión máxima permitida | 10 %, para compra y para reventa |
-| Precio máximo de reventa | 110 % del precio original |
+| Precio máximo de reventa | 110 % del precio original, salvo que el organizador fije otro entre 100 % y 150 % |
 | Comisión en boletos gratis | Ninguna |
 | Lugares que se pueden vender | Nunca más que la capacidad del evento |
+| Evento cancelado | No vende, no revende y el organizador devuelve el precio original de cada boleto |
 
 ## 1. Compra de un boleto
 
@@ -34,7 +35,14 @@ Aparte está la comisión de la red Stellar por cada operación, que es una frac
 ### Publicar un boleto en reventa
 
 - Solo el **dueño actual** puede poner su boleto en reventa.
-- El precio **no puede pasar del 110 % del precio original**. Un boleto de 100 XLM se puede revender en 110 XLM como máximo. La red rechaza cualquier precio más alto.
+- El precio **no puede pasar del tope del evento**, que empieza en el **110 % del precio original**. Un boleto de 100 XLM se puede revender en 110 XLM como máximo. La red rechaza cualquier precio más alto.
+- Se publica desde **Tu boleto** en la app, y los boletos a la venta aparecen en la página del evento.
+
+### El organizador fija el tope
+
+- Cada organizador puede cambiar el tope de **su** evento, entre el **100 %** (nadie gana con la reventa) y el **150 %** del precio original. Nadie más puede cambiarlo.
+- El tope nuevo aplica también a los boletos que ya estaban a la venta: si el organizador lo baja, una oferta más cara **ya no se puede comprar** hasta que su dueño baje el precio.
+- Cada cambio queda registrado públicamente en la red.
 - El dueño puede **cambiar el precio** volviéndolo a publicar, o **retirar** su boleto de la reventa cuando quiera.
 - Un boleto que ya se usó para entrar **no se puede revender**.
 
@@ -62,26 +70,38 @@ Un boleto deja de estar a la venta, sin que nadie tenga que hacer nada más, cua
 - Un boleto usado **no se puede transferir ni revender**.
 - Transferir un boleto (regalarlo) **no paga comisión**.
 
-## 4. Quién puede cambiar las comisiones
+## 4. Cancelación y reembolso
+
+- Solo el **organizador** puede cancelar su evento, y una sola vez.
+- Desde que se cancela, el evento **no vende boletos, no revende y no registra entradas**. Las ofertas de reventa que existían dejan de poder comprarse, y la tienda deja de mostrar el evento.
+- El organizador **devuelve el precio original** de cada boleto a su **dueño actual**: quien lo tenga en ese momento, aunque lo haya recibido de regalo o comprado en reventa.
+- El reembolso lo paga el organizador de su cuenta, por el **100 % del precio**. La comisión de TrustTix de la venta original no se devuelve, así que el organizador cubre esa diferencia.
+- Cada boleto se reembolsa **una sola vez**. Un boleto reembolsado ya no sirve para entrar, transferir ni revender.
+- Un boleto que **ya entró** al evento no se reembolsa. Los boletos gratis se marcan como reembolsados sin mover dinero.
+- Cada cancelación y cada reembolso quedan registrados públicamente en la red.
+
+## 5. Quién puede cambiar las comisiones
 
 - Solo la **cuenta administradora de TrustTix** puede cambiar las comisiones, y nunca arriba del **10 %**, ni siquiera por error.
 - Cada cambio queda **registrado públicamente** en la red, con los valores nuevos.
 - Una venta paga la comisión vigente en el momento en que ocurre. Cambiar la comisión no afecta las ventas anteriores.
 
-## 5. Todo se puede verificar
+## 6. Todo se puede verificar
 
 Cualquier persona, sin cuenta, puede consultar en la red:
 
 - Los datos de un evento: capacidad, boletos vendidos, precio y tope de reventa.
 - Quién es el dueño de un boleto y si ya se usó.
 - Si un boleto está en reventa y a qué precio.
+- Si un evento está cancelado y si un boleto ya fue reembolsado.
 - Las comisiones vigentes.
 
-Así, antes de comprar en reventa, el comprador puede comprobar que el boleto existe, que no se ha usado y quién lo vende.
+Así, antes de comprar en reventa, el comprador puede comprobar que el boleto existe, que no se ha usado, que no se reembolsó y quién lo vende.
 
-## 6. Lo que viene
+## 7. Lo que viene
 
-En desarrollo, todavía **no** está en el contrato. Cuando llegue, este documento se actualizará:
+En desarrollo, todavía **no** está en el contrato ni en la app. Cuando llegue, este documento se actualizará:
 
-- **Tope de reventa por evento:** hoy todos los eventos tienen el mismo tope de 110 %. El organizador podrá fijar el suyo.
-- **Cancelar un evento y reembolsar:** el organizador podrá cancelar su evento. Un evento cancelado no vende ni revende, y los compradores reciben su reembolso.
+- **Botones de tope y cancelación en el panel del organizador:** hoy las funciones existen en el contrato y se usan desde la CLI de Stellar.
+- **Regalía para el organizador** en cada reventa.
+- **Reembolso de todos los boletos en un paso**, en lugar de uno por uno.
