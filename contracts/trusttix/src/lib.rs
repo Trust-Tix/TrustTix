@@ -27,6 +27,10 @@ const PUNTOS_BASE: i128 = 10_000;
 const COMISION_MAXIMA: u32 = 1_000;
 /// Tope inicial de reventa de cada evento: 110 % del precio original.
 const TOPE_REVENTA_INICIAL: u32 = 11_000;
+/// El organizador puede fijar el tope entre el 100 % (sin ganancia para quien
+/// revende) y el 150 % del precio original.
+const TOPE_REVENTA_MINIMO: u32 = 10_000;
+const TOPE_REVENTA_MAXIMO: u32 = 15_000;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -44,6 +48,7 @@ pub enum Error {
     ComisionInvalida = 10,
     SobreTope = 11,
     NoEnReventa = 12,
+    TopeInvalido = 13,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -140,6 +145,14 @@ pub struct Reventa {
 pub struct ReventaCancelada {
     #[topic]
     pub boleto: u32,
+}
+
+#[contractevent]
+pub struct TopeReventaActualizado {
+    #[topic]
+    pub evento: u32,
+    /// Nuevo tope en puntos base sobre el precio original.
+    pub tope: u32,
 }
 
 #[contractevent]
@@ -245,6 +258,25 @@ impl TrustTix {
         let evento = leer_evento(&env, evento_id)?;
         evento.organizador.require_auth();
         guardar(&env, &Clave::Personal(evento_id, cuenta), &true);
+        Ok(())
+    }
+
+    /// El organizador fija el precio máximo de reventa de su evento, en puntos
+    /// base sobre el precio original (10,000 = 100 %, 15,000 = 150 %). Aplica
+    /// también a los boletos que ya estaban en reventa.
+    pub fn fijar_tope_reventa(env: Env, evento_id: u32, tope: u32) -> Result<(), Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if !(TOPE_REVENTA_MINIMO..=TOPE_REVENTA_MAXIMO).contains(&tope) {
+            return Err(Error::TopeInvalido);
+        }
+        evento.tope_reventa = tope;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        TopeReventaActualizado {
+            evento: evento_id,
+            tope,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -354,7 +386,7 @@ impl TrustTix {
             return Err(Error::PrecioInvalido);
         }
         let evento = leer_evento(&env, boleto.evento)?;
-        if precio > evento.precio * evento.tope_reventa as i128 / PUNTOS_BASE {
+        if precio > precio_maximo(&evento) {
             return Err(Error::SobreTope);
         }
 
@@ -394,6 +426,10 @@ impl TrustTix {
             .ok_or(Error::NoEnReventa)?;
         if boleto.usado {
             return Err(Error::YaUsado);
+        }
+        // Si el organizador bajó el tope después de publicarse, la oferta ya no vale.
+        if precio > precio_maximo(&leer_evento(&env, boleto.evento)?) {
+            return Err(Error::SobreTope);
         }
         let vendedor = boleto.dueno.clone();
         if vendedor == comprador {
@@ -562,6 +598,11 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+/// Precio más alto al que se puede revender un boleto del evento.
+fn precio_maximo(evento: &Evento) -> i128 {
+    evento.precio * evento.tope_reventa as i128 / PUNTOS_BASE
 }
 
 fn siguiente(env: &Env, clave: Clave) -> u32 {

@@ -378,6 +378,48 @@ fn nadie_se_compra_su_propio_boleto_y_sin_saldo_no_hay_reventa() {
 }
 
 #[test]
+fn el_organizador_fija_el_tope_de_reventa() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    assert_eq!(p.tix.consultar_evento(&evento).tope_reventa, 11_000);
+
+    // Sube el tope a 130 %: 32.5 XLM. Lo firma el organizador, nadie más.
+    p.tix.fijar_tope_reventa(&evento, &13_000);
+    let firmas = p.env.auths();
+    assert_eq!(firmas.len(), 1);
+    assert_eq!(firmas[0].0, p.organizador);
+    assert_eq!(p.tix.consultar_evento(&evento).tope_reventa, 13_000);
+    assert!(p
+        .tix
+        .try_publicar_reventa(&boleto, &vendedor, &325_000_000)
+        .is_ok());
+
+    // Si lo baja a 100 %, la oferta de 32.5 XLM ya no se puede comprar.
+    p.tix.fijar_tope_reventa(&evento, &10_000);
+    let comprador = con_saldo(&p, 325_000_000);
+    assert_eq!(
+        p.tix.try_comprar_reventa(&boleto, &comprador),
+        Err(Ok(Error::SobreTope))
+    );
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, vendedor);
+
+    // Fuera del rango de 100 % a 150 % se rechaza.
+    assert_eq!(
+        p.tix.try_fijar_tope_reventa(&evento, &9_999),
+        Err(Ok(Error::TopeInvalido))
+    );
+    assert_eq!(
+        p.tix.try_fijar_tope_reventa(&evento, &15_001),
+        Err(Ok(Error::TopeInvalido))
+    );
+    assert_eq!(
+        p.tix.try_fijar_tope_reventa(&99, &12_000),
+        Err(Ok(Error::EventoNoExiste))
+    );
+}
+
+#[test]
 fn validaciones_al_crear_y_consultar() {
     let p = preparar();
     let vacio = p.tix.try_crear_evento(
