@@ -1,5 +1,9 @@
 # TrustTix
 
+*Read this in [English](README.en.md).*
+
+Boletos de eventos que no se pueden falsificar ni revender abusivamente. Cada boleto queda a nombre de su dueño en un contrato de Stellar: el pago y el boleto van en la misma transacción, cada boleto entra una sola vez y la reventa tiene un precio tope. Las reglas de dinero están en [docs/reglas-de-negocio.md](docs/reglas-de-negocio.md) y los casos para probar la app en [docs/casos-de-prueba.md](docs/casos-de-prueba.md).
+
 ## Requisitos
 
 **Para el front:**
@@ -17,7 +21,7 @@
 ## Instalación
 
 ```bash
-git clone https://github.com/DanielRosalesAlanis/TrustTix.git
+git clone https://github.com/Trust-Tix/TrustTix.git
 cd TrustTix/frontend
 npm install
 ```
@@ -39,7 +43,7 @@ npm run dev
 
 Antes de la primera vez, copia `frontend/.env.example` como `frontend/.env.local` y pon el ID de cliente de Google en `VITE_GOOGLE_CLIENT_ID` (ver [Inicio de sesión con Google](#inicio-de-sesión-con-google)).
 
-Abre <http://localhost:5173/?portal=app>, mira los eventos, inicia sesión con Google y conecta una billetera para comprar. El front ya apunta al contrato desplegado en Testnet (`CCWWMLZANZV54WMJQ5JQ6XP2AAUE5BGKK3Q5CPQZEJMREJ4OYRVN36GD`).
+Abre <http://localhost:5173/?portal=app>, mira los eventos, inicia sesión con Google y conecta una billetera para comprar. El front ya apunta al contrato v2 desplegado en Testnet (`CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4`), con comisiones, reventa con tope, cancelación y reembolso.
 
 **Portales:** la misma app se publica en cuatro direcciones.
 
@@ -68,16 +72,14 @@ cd contracts
 stellar contract build
 ```
 
-**Desplegar una instancia propia en Testnet (opcional):**
+**Desplegar una instancia propia en Testnet (opcional, PowerShell):**
 
-```bash
-stellar keys generate mi-cuenta --network testnet --fund
-stellar contract deploy --wasm target/wasm32v1-none/release/trusttix.wasm \
-  --source-account mi-cuenta --network testnet \
-  -- --token $(stellar contract id asset --asset native --network testnet)
+```powershell
+.\contracts\scripts\desplegar-v2.ps1 -Fuente mi-cuenta
+.\contracts\scripts\sembrar.ps1
 ```
 
-Para usar esa instancia en el front, agrega `VITE_CONTRATO_ID=<id del contrato>` a `frontend/.env.local` y vuelve a correr `npm run dev`. Para crear los eventos de ejemplo en ella: `.\scripts\sembrar.ps1 -Contrato <id del contrato>` desde la carpeta `contracts`.
+El primero compila, despliega e inicializa el contrato (token XLM, cuenta administradora y comisiones de 3 % y 2 %) y guarda su ID en `contracts/scripts/contrato-id.txt`. El segundo crea los eventos de ejemplo en ese contrato, con compras, una entrada y boletos en reventa, y guarda los enlaces en `contracts/scripts/transacciones.md`. Para usar esa instancia en el front, agrega `VITE_CONTRATO_ID=<id del contrato>` a `frontend/.env.local` y vuelve a correr `npm run dev`.
 
 ## Inicio de sesión con Google
 
@@ -120,7 +122,7 @@ El contrato guarda lo que define un boleto. La portada, la categoría, la direcc
    npm run sembrar
    ```
 
-   Sube las imágenes de [supabase/semilla/imagenes](supabase/semilla/imagenes) y los datos de [supabase/semilla/catalogo.json](supabase/semilla/catalogo.json). Se puede volver a correr; actualiza lo que ya existe.
+   Sube las imágenes de [supabase/semilla/imagenes](supabase/semilla/imagenes) y los datos de [supabase/semilla/catalogo.json](supabase/semilla/catalogo.json). Cada entrada se liga al evento del contrato que tiene el mismo nombre, así que primero hay que correr `sembrar.ps1`. Se puede volver a correr; actualiza lo que ya existe.
 
 Cualquiera puede leer los datos. Para registrar los de un evento nuevo hace falta sesión de Google, y solo quien los registró puede cambiarlos. Las portadas nuevas deben medir al menos 1600 px de ancho; la app las guarda en WebP a un máximo de 2400 px.
 
