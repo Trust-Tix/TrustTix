@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 import Encabezado from '../components/Encabezado'
 import BotonBilletera from '../components/BotonBilletera'
 import CodigoCuenta from '../components/CodigoCuenta'
-import { IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
+import { IconoAyuda, IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
 import { enlaceContrato } from '../stellar/config'
 import { abreviar } from '../utils/formato'
 import { PORTAL, urlPortal } from '../portal'
@@ -83,6 +83,12 @@ export default function Perfil() {
           <Link to="/verificar" className="menu__opcion">
             <IconoEscudo />
             <span><strong>Verificar un boleto</strong><small>Consulta en la red quién es el dueño antes de comprar en reventa</small></span>
+          </Link>
+        )}
+        {PORTAL === 'app' && (
+          <Link to="/ayuda" className="menu__opcion">
+            <IconoAyuda />
+            <span><strong>Ayuda</strong><small>Comprar, revender, regalar y qué pasa si pierdes el celular</small></span>
           </Link>
         )}
         {MENU[PORTAL].map(({ portal, ruta, Icono, titulo, texto }) => (

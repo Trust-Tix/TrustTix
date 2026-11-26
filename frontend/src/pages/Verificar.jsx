@@ -105,6 +105,9 @@ export default function Verificar() {
         </div>
       )}
 
+      <p className="nota nota--centro">
+        ¿Dudas sobre la reventa? <Link to="/ayuda">Lee la ayuda</Link>
+      </p>
       {!usuario && (
         <p className="nota nota--centro">
           ¿Quieres comprar boletos? <Link to="/login">Inicia sesión</Link>

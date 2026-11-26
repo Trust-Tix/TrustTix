@@ -52,6 +52,9 @@ export const IconoCheck = (p) => (
 export const IconoX = (p) => (
   <svg {...base} {...p}><path d="M6 6l12 12M18 6 6 18" /></svg>
 )
-export const IconoExterno = (p) => (
+export const IconoAyuda = (p) => (
+  <svg {...base} {...p}><circle cx="12" cy="12" r="8.5" /><path d="M9.6 9.5a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01" /></svg>
+)
+export const IconoExterno =(p) => (
   <svg {...base} {...p}><path d="M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10" /></svg>
 )

@@ -13,6 +13,7 @@ import MisBoletos from './pages/MisBoletos'
 import DetalleBoleto from './pages/DetalleBoleto'
 import Transferir from './pages/Transferir'
 import Verificar from './pages/Verificar'
+import Ayuda from './pages/Ayuda'
 import Perfil from './pages/Perfil'
 import Billetera from './pages/Billetera'
 import Organizador from './pages/Organizador'
@@ -91,6 +92,7 @@ function rutas() {
       <Route path="/lugares" element={<Lugares />} />
       <Route path="/lugares/:clave" element={<Lugar />} />
       <Route path="/verificar" element={<Verificar />} />
+      <Route path="/ayuda" element={<Ayuda />} />
       <Route path="/boletos" element={<ConSesion><MisBoletos /></ConSesion>} />
       <Route path="/boletos/:id" element={<ConSesion><DetalleBoleto /></ConSesion>} />
       <Route path="/boletos/:id/transferir" element={<ConSesion><Transferir /></ConSesion>} />

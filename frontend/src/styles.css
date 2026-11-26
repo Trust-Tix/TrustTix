@@ -1036,6 +1036,50 @@ a.billetera--conectada { cursor: pointer; }
 .introduccion { color: var(--texto-2); font-size: 14px; }
 .introduccion strong { color: var(--texto); }
 
+/* ---------- Ayuda: preguntas que se abren al tocarlas ---------- */
+.preguntas {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radio);
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  overflow: hidden;
+}
+
+.pregunta + .pregunta { border-top: 1px solid var(--borde); }
+
+.pregunta summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pregunta summary::-webkit-details-marker { display: none; }
+
+.pregunta summary::after {
+  content: '+';
+  flex-shrink: 0;
+  color: var(--texto-2);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.pregunta[open] summary::after { content: '−'; }
+
+.pregunta p {
+  padding: 0 18px 18px;
+  color: var(--texto-2);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.pregunta p strong { color: var(--texto); }
+
 .vacio {
   padding: 32px 8px;
   text-align: center;
