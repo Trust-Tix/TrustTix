@@ -98,7 +98,7 @@ export function patrocinioActivo() {
 // pague la comisión; si el patrocinio no está disponible (en local, o sin la
 // cuenta patrocinadora configurada), la envía directo y la comisión sale de la
 // billetera, como antes.
-async function enviarFirmada(transaccion) {
+export async function enviarFirmada(transaccion) {
   try {
     const r = await fetch('/api/patrocinar', {
       method: 'POST',
@@ -120,7 +120,7 @@ async function enviarFirmada(transaccion) {
 }
 
 // Espera a que la red confirme la transacción y devuelve su resultado.
-async function confirmar(hash) {
+export async function confirmar(hash) {
   for (let intento = 0; intento < 60; intento++) {
     const r = await servidor.getTransaction(hash)
     if (r.status === 'SUCCESS') return r.returnValue ? scValToNative(r.returnValue) : undefined
