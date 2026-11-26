@@ -53,6 +53,9 @@ export function xlm(stroops) {
 
 export const precio = (stroops) => (BigInt(stroops) === 0n ? 'Gratis' : `${xlm(stroops)} XLM`)
 
+// Puntos base a texto: 300 → "3 %", 9_750 → "97.5 %".
+export const porcentaje = (puntos) => `${(Number(puntos) / 100).toLocaleString('es-MX', { maximumFractionDigits: 2 })} %`
+
 export const aStroops = (xlmTexto) => BigInt(Math.round(Number(xlmTexto || 0) * 10_000_000))
 
 export const folio = (id) => `TTX-${String(id).padStart(6, '0')}`

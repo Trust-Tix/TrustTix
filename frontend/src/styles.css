@@ -1013,7 +1013,8 @@ a.billetera--conectada { cursor: pointer; }
 }
 
 .estado--valido { background: rgba(48, 209, 88, 0.14); color: var(--exito); }
-.estado--usado { background: var(--superficie-2); color: var(--texto-2); }
+.estado--usado,
+.estado--reembolsado { background: var(--superficie-2); color: var(--texto-2); }
 
 /* ---------- Tarjeta genérica ---------- */
 

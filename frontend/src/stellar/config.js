@@ -1,8 +1,9 @@
 import { Networks } from '@stellar/stellar-sdk'
 
-// Contrato TrustTix desplegado en Stellar Testnet.
+// Contrato TrustTix v2 en Stellar Testnet: comisiones, reventa con tope,
+// cancelación y reembolso.
 export const CONTRATO_ID =
-  import.meta.env.VITE_CONTRATO_ID ?? 'CCWWMLZANZV54WMJQ5JQ6XP2AAUE5BGKK3Q5CPQZEJMREJ4OYRVN36GD'
+  import.meta.env.VITE_CONTRATO_ID ?? 'CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4'
 
 export const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'https://soroban-testnet.stellar.org'
 export const HORIZON_URL = import.meta.env.VITE_HORIZON_URL ?? 'https://horizon-testnet.stellar.org'

@@ -10,7 +10,7 @@ import { comoLlegar, mapaEmbebido } from '../utils/mapas'
 // Un recinto: dónde está y qué eventos tiene.
 export default function Lugar() {
   const { clave } = useParams()
-  const { eventos, cargando } = useApp()
+  const { cartelera: eventos, cargando } = useApp()
   const delLugar = useMemo(() => eventos.filter((ev) => claveLugar(ev) === clave), [eventos, clave])
   const primero = useMemo(() => delLugar.slice(0, 1), [delLugar])
   const coordenadasDe = useCoordenadas(primero)

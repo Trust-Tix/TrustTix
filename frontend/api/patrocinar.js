@@ -14,7 +14,8 @@
 
 import { FeeBumpTransaction, Keypair, Networks, TransactionBuilder, rpc } from '@stellar/stellar-sdk'
 
-const CONTRATO = process.env.VITE_CONTRATO_ID ?? 'CCWWMLZANZV54WMJQ5JQ6XP2AAUE5BGKK3Q5CPQZEJMREJ4OYRVN36GD'
+// Mismo contrato que la app (frontend/src/stellar/config.js).
+const CONTRATO = process.env.VITE_CONTRATO_ID ?? 'CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4'
 const RPC_URL = process.env.VITE_RPC_URL ?? 'https://soroban-testnet.stellar.org'
 const RED = Networks.TESTNET
 // 1 XLM: muy por encima de lo que cuesta una llamada normal al contrato.

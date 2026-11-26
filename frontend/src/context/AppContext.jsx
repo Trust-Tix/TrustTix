@@ -23,7 +23,7 @@ import { entrarConGoogle, guardarMetadatos, leerMetadatos, salirDeSupabase, subi
 
 // Cambia junto con el contrato: los números de evento y boleto de otro
 // contrato no corresponden a los de este.
-const CLAVE = 'trusttix-v6'
+const CLAVE = 'trusttix-v7'
 const AppContext = createContext(null)
 
 function cargarLocal() {
@@ -48,6 +48,9 @@ function armarEvento(id, enRed, datos) {
     vendidos: Number(enRed.vendidos),
     precio: BigInt(enRed.precio),
     organizador: enRed.organizador,
+    // Precio máximo de reventa en puntos base sobre el precio (11,000 = 110 %).
+    topeReventa: Number(enRed.tope_reventa),
+    cancelado: Boolean(enRed.cancelado),
     categoria: meta.categoria ?? 'Eventos',
     ciudad: meta.ciudad ?? '',
     direccion: meta.direccion ?? enRed.recinto,
@@ -65,7 +68,8 @@ function armarBoleto(id, enRed) {
     id,
     eventoId: Number(enRed.evento),
     dueno: enRed.dueno,
-    estado: enRed.usado ? 'usado' : 'valido',
+    // Solo un boleto 'valido' sirve para entrar, transferir o revender.
+    estado: enRed.usado ? 'usado' : enRed.reembolsado ? 'reembolsado' : 'valido',
     usadoEn: enRed.usado ? Number(enRed.usado_en) : null,
   }
 }
@@ -88,6 +92,8 @@ export function AppProvider({ children }) {
   const [misBoletos, setMisBoletos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [errorRed, setErrorRed] = useState('')
+  // Comisiones vigentes de TrustTix, leídas del contrato (puntos base).
+  const [comisiones, setComisiones] = useState(null)
 
   useEffect(() => {
     try {
@@ -133,6 +139,8 @@ export function AppProvider({ children }) {
     () => eventosEnRed.map(({ id, enRed }) => armarEvento(id, enRed, metadatos)),
     [eventosEnRed, metadatos],
   )
+  // Lo que se ofrece en la tienda: los eventos cancelados ya no se anuncian.
+  const cartelera = useMemo(() => eventos.filter((ev) => !ev.cancelado), [eventos])
 
   const recargarMisBoletos = useCallback(async (cuenta = billetera) => {
     if (!cuenta) {
@@ -151,6 +159,10 @@ export function AppProvider({ children }) {
   useEffect(() => {
     recargarEventos()
   }, [recargarEventos])
+
+  useEffect(() => {
+    red.comisiones().then(setComisiones, (e) => console.warn(e.message))
+  }, [])
 
   const ponerBilletera = useCallback((b) => {
     setBilletera(b?.direccion ?? null)
@@ -418,6 +430,8 @@ export function AppProvider({ children }) {
       avisoBilletera,
       setAvisoBilletera,
       eventos,
+      cartelera,
+      comisiones,
       misBoletos,
       registro,
       personal,
@@ -440,7 +454,7 @@ export function AppProvider({ children }) {
       crearEvento,
       cambiarPortada,
     }),
-    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
+    [usuario, billetera, infoBilletera, importarBilletera, saldo, recargarSaldo, preparando, avisoBilletera, eventos, cartelera, comisiones, misBoletos, registro, personal, cargando, errorRed, iniciarSesion, cerrarSesion, conectarBilletera, desconectarBilletera, recargarEventos, recargarMisBoletos, comprar, transferir, consultarBoleto, registrarEntrada, esPersonal, autorizarPersonal, quitarPersonal, boletosDeEvento, crearEvento, cambiarPortada],
   )
 
   return <AppContext.Provider value={valor}>{children}</AppContext.Provider>

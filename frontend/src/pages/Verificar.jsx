@@ -7,6 +7,8 @@ import { IconoBuscar, IconoCheck, IconoExterno, IconoX } from '../components/Ico
 import { enlaceContrato, enlaceCuenta } from '../stellar/config'
 import { abreviar, fechaCorta, fechaHora, folio, leerFolio } from '../utils/formato'
 
+const TITULO = { valido: 'Boleto válido', usado: 'Boleto ya utilizado', reembolsado: 'Boleto reembolsado' }
+
 // Verificación pública: no requiere sesión ni billetera. Lee el contrato.
 export default function Verificar() {
   const { billetera, usuario } = useApp()
@@ -15,6 +17,8 @@ export default function Verificar() {
   const [texto, setTexto] = useState(consulta ?? '')
   const idBoleto = consulta ? leerFolio(consulta) : null
   const { cargando, datos, error } = useBoleto(idBoleto)
+  // Solo vale comprarlo si no se ha usado, no se reembolsó y el evento sigue en pie.
+  const vale = datos?.boleto.estado === 'valido' && !datos.evento.cancelado
 
   const buscar = (e) => {
     e.preventDefault()
@@ -65,11 +69,11 @@ export default function Verificar() {
       )}
 
       {datos && !cargando && (
-        <div className={`resultado resultado--${datos.boleto.estado === 'usado' ? 'invalido' : 'valido'}`}>
+        <div className={`resultado resultado--${vale ? 'valido' : 'invalido'}`}>
           <span className="resultado__icono">
-            {datos.boleto.estado === 'usado' ? <IconoX width={40} height={40} /> : <IconoCheck width={40} height={40} />}
+            {vale ? <IconoCheck width={40} height={40} /> : <IconoX width={40} height={40} />}
           </span>
-          <h2>{datos.boleto.estado === 'usado' ? 'Boleto ya utilizado' : 'Boleto válido'}</h2>
+          <h2>{datos.evento.cancelado && datos.boleto.estado === 'valido' ? 'Evento cancelado' : TITULO[datos.boleto.estado]}</h2>
           <dl className="resumen">
             <div><dt>Boleto</dt><dd className="mono">{folio(datos.boleto.id)}</dd></div>
             <div><dt>Evento</dt><dd>{datos.evento.titulo}</dd></div>
@@ -89,7 +93,11 @@ export default function Verificar() {
           <p className="nota">
             {datos.boleto.estado === 'usado'
               ? 'Este boleto ya entró al evento. No puede volver a usarse.'
-              : 'Si compras en reventa, pide que te lo transfieran a tu cuenta y vuelve a verificar: el dueño debe cambiar a tu dirección.'}
+              : datos.boleto.estado === 'reembolsado'
+                ? 'El evento se canceló y el organizador ya devolvió el precio de este boleto. No lo compres.'
+                : datos.evento.cancelado
+                  ? 'El evento se canceló. Este boleto ya no da acceso: no lo compres.'
+                  : 'Si compras en reventa, pide que te lo transfieran a tu cuenta y vuelve a verificar: el dueño debe cambiar a tu dirección.'}
           </p>
           <a className="enlace enlace--externo" href={enlaceContrato()} target="_blank" rel="noreferrer">
             Dato leído del registro público de TrustTix <IconoExterno width={12} height={12} />

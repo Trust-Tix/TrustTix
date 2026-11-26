@@ -6,6 +6,8 @@ import Portada from './Portada'
 import { IconoCalendario, IconoUbicacion } from './Iconos'
 import { textoDistancia } from '../utils/mapas'
 
+const ESTADO = { valido: 'Válido', usado: 'Usado', reembolsado: 'Reembolsado' }
+
 // Tarjeta de evento con estructura fija: título en una línea, recinto y fecha
 // en una fila, barra de lugares y pie con precio y botón de ancho constante.
 // Así todas las tarjetas se alinean sin importar cuánto texto tengan.
@@ -20,7 +22,7 @@ export default function TarjetaEvento({ evento, boleto, km = null }) {
   if (boleto) {
     accion = (
       <Link to={`/boletos/${boleto.id}`} className="boton boton--claro boton--tarjeta">
-        {boleto.estado === 'usado' ? 'Ver registro' : 'Ver boleto'}
+        {boleto.estado === 'valido' ? 'Ver boleto' : 'Ver registro'}
       </Link>
     )
   } else if (tengoBoleto) {
@@ -69,7 +71,7 @@ export default function TarjetaEvento({ evento, boleto, km = null }) {
         <div className="tarjeta-evento__pie">
           <span className="precio">
             {boleto ? (
-              <span className={`estado estado--${boleto.estado}`}>{boleto.estado === 'usado' ? 'Usado' : 'Válido'}</span>
+              <span className={`estado estado--${boleto.estado}`}>{ESTADO[boleto.estado]}</span>
             ) : (
               precio(evento.precio)
             )}

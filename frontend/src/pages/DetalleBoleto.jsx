@@ -36,6 +36,8 @@ export default function DetalleBoleto() {
   const { boleto, evento } = datos
   const esMio = boleto.dueno === billetera
   const usado = boleto.estado === 'usado'
+  const reembolsado = boleto.estado === 'reembolsado'
+  const vigente = boleto.estado === 'valido'
   const { dia, mes } = diaMes(evento.fecha)
 
   return (
@@ -52,6 +54,13 @@ export default function DetalleBoleto() {
           )}
         </p>
       )}
+      {evento.cancelado && (
+        <p className="alerta" role="status">
+          {reembolsado
+            ? 'El evento se canceló y el organizador ya te devolvió el precio del boleto.'
+            : 'El evento se canceló. El organizador debe devolverte el precio del boleto.'}
+        </p>
+      )}
       {!esMio && (
         <p className="alerta" role="status">
           Este boleto no está en tu cuenta. Su dueño actual es <span className="mono">{abreviar(boleto.dueno)}</span>.
@@ -59,7 +68,7 @@ export default function DetalleBoleto() {
       )}
 
       <div className="boleto-layout">
-        <article className={`boleto ${usado ? 'boleto--usado' : ''}`}>
+        <article className={`boleto ${vigente ? '' : 'boleto--usado'}`}>
           <div className="boleto__arriba">
             <Portada evento={evento} />
             <h2 className="boleto__titulo">{evento.titulo}</h2>
@@ -72,10 +81,12 @@ export default function DetalleBoleto() {
 
           <div className="boleto__abajo">
             <div className="boleto__qr">
-              {esMio && !usado ? (
+              {esMio && vigente && !evento.cancelado ? (
                 <QRCodeSVG value={`TRUSTTIX:${folio(boleto.id)}`} size={176} level="M" marginSize={0} />
               ) : (
-                <span className="boleto__sello">{usado ? 'USADO' : 'AJENO'}</span>
+                <span className="boleto__sello">
+                  {usado ? 'USADO' : reembolsado ? 'REEMBOLSADO' : evento.cancelado ? 'CANCELADO' : 'AJENO'}
+                </span>
               )}
             </div>
             <p className="boleto__folio mono">{folio(boleto.id)}</p>
@@ -85,7 +96,7 @@ export default function DetalleBoleto() {
                 <span>{mes} · {evento.hora}</span>
               </div>
               <span className={`estado estado--${boleto.estado}`}>
-                {usado ? `Usado ${fechaHora(boleto.usadoEn)}` : 'Válido'}
+                {usado ? `Usado ${fechaHora(boleto.usadoEn)}` : reembolsado ? 'Reembolsado' : 'Válido'}
               </span>
             </div>
           </div>
@@ -93,7 +104,7 @@ export default function DetalleBoleto() {
 
         <aside className="boleto-lateral">
           <div className="acciones">
-            {esMio && !usado && (
+            {esMio && vigente && !evento.cancelado && (
               <Link to={`/boletos/${boleto.id}/transferir`} className="boton boton--contorno">
                 <IconoEnviar width={16} height={16} /> Transferir
               </Link>

@@ -76,6 +76,8 @@ export default function DetalleEvento() {
   let accion
   if (miBoleto) {
     accion = <Link to={`/boletos/${miBoleto.id}`} className="boton boton--claro">Ver mi boleto</Link>
+  } else if (evento.cancelado) {
+    accion = <span className="boton boton--apagado" aria-disabled="true">Cancelado</span>
   } else if (agotado) {
     accion = <span className="boton boton--apagado" aria-disabled="true">Agotado</span>
   } else if (!usuario) {
@@ -96,6 +98,12 @@ export default function DetalleEvento() {
   return (
     <>
       <Encabezado titulo="Detalles" atras />
+
+      {evento.cancelado && (
+        <p className="alerta" role="status">
+          El organizador canceló este evento. Ya no se venden boletos, y quien compró recibe de vuelta su precio.
+        </p>
+      )}
 
       <article className="detalle">
         <div className="detalle__columna">

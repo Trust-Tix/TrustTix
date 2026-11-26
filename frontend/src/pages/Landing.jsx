@@ -11,7 +11,7 @@ const REPOSITORIO = 'https://github.com/Trust-Tix/TrustTix'
 
 // Página de trusttix.xyz: el negocio en pocas líneas. Las apps viven en sus subdominios.
 export default function Landing() {
-  const { eventos } = useApp()
+  const { cartelera: eventos } = useApp()
   const cinta = eventos.filter((ev) => ev.imagen)
   const [cifras, setCifras] = useState({ billeteras: null, boletos: null })
 

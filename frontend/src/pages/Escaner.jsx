@@ -62,6 +62,8 @@ export default function Escaner() {
         if (!r) setLectura({ tipo: 'inexistente', id: boletoId })
         else if (r.evento.id !== id) setLectura({ tipo: 'otro', id: boletoId, evento: r.evento })
         else if (r.boleto.estado === 'usado') setLectura({ tipo: 'usado', id: boletoId, boleto: r.boleto })
+        else if (r.boleto.estado === 'reembolsado' || r.evento.cancelado)
+          setLectura({ tipo: 'error', id: boletoId, mensaje: 'El evento se canceló: este boleto ya no da acceso.' })
         else setLectura({ tipo: 'valido', id: boletoId, boleto: r.boleto })
       } catch (e) {
         setLectura({ tipo: 'error', id: boletoId, mensaje: e.message })

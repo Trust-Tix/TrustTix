@@ -19,7 +19,7 @@ const TEXTO_UBICACION = {
 }
 
 export default function Inicio() {
-  const { eventos, cargando, errorRed } = useApp()
+  const { cartelera: eventos, cargando, errorRed } = useApp()
   const [busqueda, setBusqueda] = useState('')
   const [categoria, setCategoria] = useState('Todos')
   const { ubicacion, estado, localizar } = useUbicacion()

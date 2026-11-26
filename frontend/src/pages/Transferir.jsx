@@ -73,7 +73,7 @@ export default function Transferir() {
     }
   }
 
-  const puede = boleto.dueno === billetera && boleto.estado !== 'usado'
+  const puede = boleto.dueno === billetera && boleto.estado === 'valido'
 
   return (
     <>
@@ -86,7 +86,11 @@ export default function Transferir() {
 
         {!puede && (
           <p className="alerta alerta--error" role="alert">
-            {boleto.estado === 'usado' ? 'Un boleto usado ya no se puede transferir.' : 'Solo el dueño actual puede transferir este boleto.'}
+            {boleto.estado === 'usado'
+              ? 'Un boleto usado ya no se puede transferir.'
+              : boleto.estado === 'reembolsado'
+                ? 'Un boleto reembolsado ya no se puede transferir.'
+                : 'Solo el dueño actual puede transferir este boleto.'}
           </p>
         )}
 

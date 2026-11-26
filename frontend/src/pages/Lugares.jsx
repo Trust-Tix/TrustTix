@@ -8,7 +8,7 @@ import { agruparLugares } from '../utils/lugares'
 
 // Recintos con eventos en TrustTix; cada uno lleva a su mapa y su cartelera.
 export default function Lugares() {
-  const { eventos, cargando } = useApp()
+  const { cartelera: eventos, cargando } = useApp()
   const lugares = useMemo(() => agruparLugares(eventos), [eventos])
 
   return (

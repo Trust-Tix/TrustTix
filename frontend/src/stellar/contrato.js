@@ -9,12 +9,19 @@ const MENSAJES = {
   1: 'Ese evento no existe en la red.',
   2: 'Ese boleto no existe en la red.',
   3: 'Ya no quedan lugares. La red rechazó la compra y no se cobró nada.',
-  4: 'Solo el dueño actual puede transferir este boleto.',
+  4: 'Solo el dueño actual puede hacer esto con el boleto.',
   5: 'Este boleto ya fue utilizado.',
   6: 'Tu cuenta no está autorizada para registrar entradas en este evento.',
   7: 'La capacidad debe ser mayor que cero.',
   8: 'El precio no puede ser negativo.',
-  9: 'No puedes transferirte el boleto a ti mismo.',
+  9: 'Ese boleto ya es tuyo.',
+  10: 'La comisión no puede pasar del 10 %.',
+  11: 'Ese precio pasa del tope de reventa que fijó el organizador.',
+  12: 'Este boleto ya no está en reventa.',
+  13: 'El tope de reventa debe estar entre el 100 % y el 150 % del precio original.',
+  14: 'Este evento fue cancelado.',
+  15: 'El evento sigue en pie: solo se reembolsa si se cancela.',
+  16: 'Este boleto ya fue reembolsado.',
 }
 
 let especificacion = null
@@ -145,6 +152,9 @@ export const consultarEvento = (id) => leer('consultar_evento', { evento_id: id 
 export const consultarBoleto = (id) => leer('consultar_boleto', { boleto_id: id })
 export const boletosDe = (cuenta) => leer('boletos_de', { cuenta }).then((l) => l.map(Number))
 export const esPersonal = (eventoId, cuenta) => leer('es_personal', { evento_id: eventoId, cuenta })
+// Comisiones vigentes de TrustTix en puntos base: { compra: 300, reventa: 200 }.
+export const comisiones = () =>
+  leer('comisiones').then((c) => ({ compra: Number(c.compra), reventa: Number(c.reventa) }))
 
 // ---------- Acciones firmadas ----------
 

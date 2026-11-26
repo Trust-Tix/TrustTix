@@ -5,7 +5,7 @@ import { CATEGORIAS } from '../data/eventos'
 import Encabezado from '../components/Encabezado'
 import BotonBilletera from '../components/BotonBilletera'
 import useUbicacion from '../hooks/useUbicacion'
-import { aStroops } from '../utils/formato'
+import { aStroops, porcentaje } from '../utils/formato'
 import { buscarLugar, mapaEmbebido } from '../utils/mapas'
 import { ANCHO_MINIMO, prepararImagen } from '../utils/imagen'
 import { supabaseListo } from '../supabase'
@@ -25,7 +25,7 @@ const VACIO = {
 }
 
 export default function CrearEvento() {
-  const { billetera, crearEvento } = useApp()
+  const { billetera, crearEvento, comisiones } = useApp()
   const navigate = useNavigate()
   const { ubicacion } = useUbicacion()
   const [datos, setDatos] = useState(() => ({ ...VACIO, ciudad: ubicacion?.ciudad ?? '' }))
@@ -215,6 +215,12 @@ export default function CrearEvento() {
               <strong>La capacidad no se podrá aumentar después.</strong> El contrato rechazará cualquier venta por encima de ese número.
             </span>
           </p>
+          {comisiones && comisiones.compra > 0 && (
+            <p className="nota">
+              De cada boleto vendido recibes el {porcentaje(10_000 - comisiones.compra)} al momento; el{' '}
+              {porcentaje(comisiones.compra)} es la comisión de TrustTix. Los boletos gratis no pagan comisión.
+            </p>
+          )}
           <p className="nota">
             En el contrato quedan el nombre, el recinto, la fecha, la capacidad y el precio.{' '}
             {supabaseListo
