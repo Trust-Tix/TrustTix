@@ -67,6 +67,17 @@ pub enum Error {
     YaHayVentas = 21,
     SinPropuesta = 22,
     RegaliaInvalida = 23,
+    YaCalificado = 24,
+    CalificacionInvalida = 25,
+    NoHaEntrado = 26,
+}
+
+/// Calificaciones de un evento: suma de estrellas y cuántas personas votaron.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Calificacion {
+    pub suma: u32,
+    pub votos: u32,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -132,6 +143,10 @@ enum Clave {
     AdminPropuesto,
     /// Parte de cada reventa que recibe el organizador, en puntos base.
     Regalia(u32),
+    /// Estrellas que dio el dueño de un boleto usado.
+    Calificado(u32),
+    /// Suma y número de calificaciones de un evento.
+    Calificaciones(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -257,6 +272,14 @@ pub struct Reventa {
     pub comision: i128,
     /// Parte del precio que fue al organizador del evento.
     pub regalia: i128,
+}
+
+#[contractevent]
+pub struct EventoCalificado {
+    #[topic]
+    pub evento: u32,
+    pub boleto: u32,
+    pub estrellas: u32,
 }
 
 #[contractevent]
@@ -1112,6 +1135,64 @@ impl TrustTix {
         Ok(())
     }
 
+    // ---------- Después del evento ----------
+
+    /// Quien entró al evento lo califica de 1 a 5 estrellas, una vez por
+    /// boleto. Solo cuentan los boletos usados: opina quien sí asistió.
+    pub fn calificar_evento(env: Env, boleto_id: u32, estrellas: u32) -> Result<(), Error> {
+        let boleto = leer_boleto(&env, boleto_id)?;
+        boleto.dueno.require_auth();
+        if !boleto.usado {
+            return Err(Error::NoHaEntrado);
+        }
+        if !(1..=5).contains(&estrellas) {
+            return Err(Error::CalificacionInvalida);
+        }
+        if env
+            .storage()
+            .persistent()
+            .has(&Clave::Calificado(boleto_id))
+        {
+            return Err(Error::YaCalificado);
+        }
+
+        let mut total = calificacion_de(&env, boleto.evento);
+        total.suma += estrellas;
+        total.votos += 1;
+        guardar(&env, &Clave::Calificaciones(boleto.evento), &total);
+        guardar(&env, &Clave::Calificado(boleto_id), &estrellas);
+        EventoCalificado {
+            evento: boleto.evento,
+            boleto: boleto_id,
+            estrellas,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Suma de estrellas y número de votos de un evento.
+    pub fn calificacion(env: Env, evento_id: u32) -> Calificacion {
+        calificacion_de(&env, evento_id)
+    }
+
+    /// Mantiene vivos en la red un boleto, su evento y la lista de su dueño
+    /// por 30 días más. Cualquiera puede pagarlo; sirve para boletos de
+    /// eventos lejanos que, sin uso, podrían archivarse.
+    pub fn renovar(env: Env, boleto_id: u32) -> Result<(), Error> {
+        let boleto = leer_boleto(&env, boleto_id)?;
+        let datos = env.storage().persistent();
+        datos.extend_ttl(&Clave::Boleto(boleto_id), EXTENDER_TTL, EXTENDER_TTL);
+        datos.extend_ttl(&Clave::Evento(boleto.evento), EXTENDER_TTL, EXTENDER_TTL);
+        let lista = Clave::BoletosDe(boleto.dueno);
+        if datos.has(&lista) {
+            datos.extend_ttl(&lista, EXTENDER_TTL, EXTENDER_TTL);
+        }
+        env.storage()
+            .instance()
+            .extend_ttl(EXTENDER_TTL, EXTENDER_TTL);
+        Ok(())
+    }
+
     // ---------- Consultas públicas (no requieren firma) ----------
 
     pub fn consultar_evento(env: Env, evento_id: u32) -> Result<Evento, Error> {
@@ -1210,6 +1291,13 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+fn calificacion_de(env: &Env, evento_id: u32) -> Calificacion {
+    env.storage()
+        .persistent()
+        .get(&Clave::Calificaciones(evento_id))
+        .unwrap_or(Calificacion { suma: 0, votos: 0 })
 }
 
 fn regalia_de(env: &Env, evento_id: u32) -> u32 {

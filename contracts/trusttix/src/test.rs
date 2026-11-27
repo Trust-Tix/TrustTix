@@ -1007,6 +1007,64 @@ fn la_regalia_tambien_aplica_a_las_ofertas_aceptadas() {
     assert_eq!(p.token.balance(&p.tix.address), 0);
 }
 
+// ---------- Después del evento ----------
+
+#[test]
+fn solo_quien_entro_califica_y_una_sola_vez() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let fue = Address::generate(&p.env);
+    let otra = Address::generate(&p.env);
+    let no_fue = Address::generate(&p.env);
+    let b1 = p.tix.comprar(&fue, &evento);
+    let b2 = p.tix.comprar(&otra, &evento);
+    let b3 = p.tix.comprar(&no_fue, &evento);
+    p.tix
+        .registrar_entradas(&p.organizador, &Vec::from_array(&p.env, [b1, b2]));
+
+    p.tix.calificar_evento(&b1, &5);
+    assert_eq!(p.env.auths()[0].0, fue);
+    p.tix.calificar_evento(&b2, &3);
+    assert_eq!(
+        p.tix.calificacion(&evento),
+        Calificacion { suma: 8, votos: 2 }
+    );
+
+    assert_eq!(
+        p.tix.try_calificar_evento(&b1, &4),
+        Err(Ok(Error::YaCalificado))
+    );
+    assert_eq!(
+        p.tix.try_calificar_evento(&b3, &4),
+        Err(Ok(Error::NoHaEntrado))
+    );
+    let b4 = p.tix.comprar(&Address::generate(&p.env), &evento);
+    p.tix.registrar_entrada(&b4, &p.organizador);
+    for estrellas in [0, 6] {
+        assert_eq!(
+            p.tix.try_calificar_evento(&b4, &estrellas),
+            Err(Ok(Error::CalificacionInvalida))
+        );
+    }
+}
+
+#[test]
+fn renovar_mantiene_vivos_el_boleto_y_su_evento() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let fan = Address::generate(&p.env);
+    let boleto = p.tix.comprar(&fan, &evento);
+
+    p.tix.renovar(&boleto);
+
+    let ttl = p.env.as_contract(&p.tix.address, || {
+        p.env.storage().persistent().get_ttl(&Clave::Boleto(boleto))
+    });
+    assert!(ttl >= 30 * 17_280 - 1);
+    assert_eq!(p.tix.try_renovar(&99), Err(Ok(Error::BoletoNoExiste)));
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
