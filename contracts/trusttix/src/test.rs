@@ -954,6 +954,59 @@ fn el_admin_cambia_en_dos_pasos_y_las_comisiones_siguen_al_nuevo() {
     assert_eq!(p.token.balance(&p.admin), 0);
 }
 
+// ---------- Regalía ----------
+
+#[test]
+fn la_regalia_reparte_cada_reventa_entre_vendedor_organizador_y_trusttix() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    let organizador_antes = p.token.balance(&p.organizador);
+    let admin_antes = p.token.balance(&p.admin);
+
+    p.tix.fijar_regalia(&evento, &500); // 5 %
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert_eq!(p.tix.regalia(&evento), 500);
+
+    let precio = 250_000_000; // 25 XLM
+    let comprador = con_saldo(&p, precio);
+    p.tix.publicar_reventa(&boleto, &vendedor, &precio);
+    p.tix.comprar_reventa(&boleto, &comprador);
+
+    // Quien compra paga lo mismo: 2 % a TrustTix, 5 % al organizador y el resto a quien vende.
+    assert_eq!(p.token.balance(&comprador), 0);
+    assert_eq!(p.token.balance(&p.admin) - admin_antes, 5_000_000);
+    assert_eq!(
+        p.token.balance(&p.organizador) - organizador_antes,
+        12_500_000
+    );
+    assert_eq!(p.token.balance(&vendedor), precio - 5_000_000 - 12_500_000);
+    assert_eq!(
+        p.tix.try_fijar_regalia(&evento, &1_001),
+        Err(Ok(Error::RegaliaInvalida))
+    );
+}
+
+#[test]
+fn la_regalia_tambien_aplica_a_las_ofertas_aceptadas() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    p.tix.fijar_regalia(&evento, &1_000); // 10 %
+    let organizador_antes = p.token.balance(&p.organizador);
+    let interesado = con_saldo(&p, PRECIO);
+
+    p.tix.ofertar(&interesado, &boleto, &PRECIO);
+    p.tix.aceptar_oferta(&boleto, &dueno, &interesado);
+
+    assert_eq!(
+        p.token.balance(&p.organizador) - organizador_antes,
+        25_000_000
+    );
+    assert_eq!(p.token.balance(&dueno), PRECIO - 5_000_000 - 25_000_000);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]

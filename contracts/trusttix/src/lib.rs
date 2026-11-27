@@ -66,6 +66,7 @@ pub enum Error {
     VentasPausadas = 20,
     YaHayVentas = 21,
     SinPropuesta = 22,
+    RegaliaInvalida = 23,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -129,6 +130,8 @@ enum Clave {
     OrganizadorPropuesto(u32),
     /// Cuenta a la que el administrador propone pasar la administración.
     AdminPropuesto,
+    /// Parte de cada reventa que recibe el organizador, en puntos base.
+    Regalia(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -252,6 +255,15 @@ pub struct Reventa {
     pub precio: i128,
     /// Parte del precio que fue a TrustTix.
     pub comision: i128,
+    /// Parte del precio que fue al organizador del evento.
+    pub regalia: i128,
+}
+
+#[contractevent]
+pub struct RegaliaFijada {
+    #[topic]
+    pub evento: u32,
+    pub puntos: u32,
 }
 
 #[contractevent]
@@ -889,12 +901,13 @@ impl TrustTix {
 
         mover(&env, boleto_id, &vendedor, &comprador)?;
         env.storage().persistent().remove(&clave);
-        let comision = cobrar(
+        let (comision, regalia) = pagar_reventa(
             &env,
             &env.current_contract_address(),
             &vendedor,
+            boleto.evento,
+            &evento.organizador,
             precio,
-            comisiones(&env).reventa,
         );
         Reventa {
             boleto: boleto_id,
@@ -902,6 +915,7 @@ impl TrustTix {
             comprador,
             precio,
             comision,
+            regalia,
         }
         .publish(&env);
         Ok(())
@@ -1023,12 +1037,13 @@ impl TrustTix {
             return Err(Error::MismoDueno);
         }
 
-        let comision = cobrar(
+        let (comision, regalia) = pagar_reventa(
             &env,
             &comprador,
             &vendedor,
+            boleto.evento,
+            &evento.organizador,
             precio,
-            comisiones(&env).reventa,
         );
 
         boleto.dueno = comprador.clone();
@@ -1045,9 +1060,36 @@ impl TrustTix {
             comprador,
             precio,
             comision,
+            regalia,
         }
         .publish(&env);
         Ok(())
+    }
+
+    /// El organizador fija qué parte de cada reventa de su evento recibe él,
+    /// en puntos base (500 = 5 %), hasta el 10 %. Sale del precio de reventa,
+    /// no se suma: quien compra paga lo mismo.
+    pub fn fijar_regalia(env: Env, evento_id: u32, puntos: u32) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if puntos > COMISION_MAXIMA {
+            return Err(Error::RegaliaInvalida);
+        }
+        guardar(&env, &Clave::Regalia(evento_id), &puntos);
+        RegaliaFijada {
+            evento: evento_id,
+            puntos,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Parte de cada reventa del evento que recibe el organizador, en puntos base.
+    pub fn regalia(env: Env, evento_id: u32) -> u32 {
+        regalia_de(&env, evento_id)
     }
 
     // ---------- Personal de acceso ----------
@@ -1168,6 +1210,39 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+fn regalia_de(env: &Env, evento_id: u32) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&Clave::Regalia(evento_id))
+        .unwrap_or(0)
+}
+
+/// Reparte el pago de una reventa: la comisión va a TrustTix, la regalía al
+/// organizador y el resto a quien vende. Devuelve (comisión, regalía).
+fn pagar_reventa(
+    env: &Env,
+    de: &Address,
+    vendedor: &Address,
+    evento_id: u32,
+    organizador: &Address,
+    precio: i128,
+) -> (i128, i128) {
+    if precio <= 0 {
+        return (0, 0);
+    }
+    let token = token::Client::new(env, &token_de_pago(env));
+    let comision = precio * comisiones(env).reventa as i128 / PUNTOS_BASE;
+    let regalia = precio * regalia_de(env, evento_id) as i128 / PUNTOS_BASE;
+    if comision > 0 {
+        token.transfer(de, admin(env), &comision);
+    }
+    if regalia > 0 {
+        token.transfer(de, organizador, &regalia);
+    }
+    token.transfer(de, vendedor, &(precio - comision - regalia));
+    (comision, regalia)
 }
 
 fn ventas_pausadas(env: &Env, evento_id: u32) -> bool {
