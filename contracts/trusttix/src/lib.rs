@@ -14,7 +14,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, BytesN, ContractExecutable, Env, String, Vec,
+    Address, Bytes, BytesN, ContractExecutable, Env, String, Vec,
 };
 
 /// Ledgers aproximados en un día (un ledger cada ~5 segundos).
@@ -77,6 +77,20 @@ pub enum Error {
     YaApartado = 27,
     SinApartado = 28,
     ApartadoVencido = 29,
+    SinPreventa = 30,
+    CodigoIncorrecto = 31,
+    PreventaAgotada = 32,
+}
+
+/// Preventa de un evento: huella del código, precio especial y cupo.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Preventa {
+    /// SHA-256 del código en minúsculas y sin espacios a los lados.
+    pub codigo: BytesN<32>,
+    pub precio: i128,
+    pub cupo: u32,
+    pub vendidos: u32,
 }
 
 /// Lugar apartado: lo que se dejó de anticipo y hasta cuándo (marca de tiempo
@@ -165,6 +179,7 @@ enum Clave {
     Calificaciones(u32),
     /// Lugar que una cuenta apartó en un evento.
     Apartado(u32, Address),
+    Preventa(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -1325,6 +1340,83 @@ impl TrustTix {
             .ok_or(Error::SinApartado)
     }
 
+    // ---------- Preventa ----------
+
+    /// El organizador abre una preventa para quien tenga un código (por
+    /// ejemplo, su club de fans): precio especial, no mayor al general, y un
+    /// cupo de boletos. Abrirla otra vez la reemplaza.
+    pub fn abrir_preventa(
+        env: Env,
+        evento_id: u32,
+        codigo: BytesN<32>,
+        precio: i128,
+        cupo: u32,
+    ) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if precio < 0 || precio > evento.precio {
+            return Err(Error::PrecioInvalido);
+        }
+        if cupo == 0 {
+            return Err(Error::CantidadInvalida);
+        }
+        let preventa = Preventa {
+            codigo,
+            precio,
+            cupo,
+            vendidos: 0,
+        };
+        guardar(&env, &Clave::Preventa(evento_id), &preventa);
+        Ok(())
+    }
+
+    /// Compra con el código de preventa: precio especial mientras quede cupo,
+    /// con las mismas reglas de capacidad y límite por cuenta.
+    pub fn comprar_preventa(
+        env: Env,
+        comprador: Address,
+        evento_id: u32,
+        codigo: String,
+    ) -> Result<u32, Error> {
+        comprador.require_auth();
+        let mut preventa: Preventa = env
+            .storage()
+            .persistent()
+            .get(&Clave::Preventa(evento_id))
+            .ok_or(Error::SinPreventa)?;
+        if huella(&env, &codigo) != Some(preventa.codigo.clone()) {
+            return Err(Error::CodigoIncorrecto);
+        }
+        if preventa.vendidos >= preventa.cupo {
+            return Err(Error::PreventaAgotada);
+        }
+        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            preventa.precio,
+            comisiones(&env).compra,
+        );
+        let id = emitir(&env, evento_id, &mut evento, &comprador);
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        preventa.vendidos += 1;
+        guardar(&env, &Clave::Preventa(evento_id), &preventa);
+
+        Compra {
+            evento: evento_id,
+            boleto: id,
+            comprador,
+            precio: preventa.precio,
+            comision,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
     // ---------- Después del evento ----------
 
     /// Quien entró al evento lo califica de 1 a 5 estrellas, una vez por
@@ -1481,6 +1573,23 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+/// SHA-256 de un código en minúsculas y sin espacios al inicio ni al final.
+/// Un código vacío o de más de 64 bytes no tiene huella.
+fn huella(env: &Env, codigo: &String) -> Option<BytesN<32>> {
+    let largo = codigo.len() as usize;
+    if largo == 0 || largo > 64 {
+        return None;
+    }
+    let mut texto = [0u8; 64];
+    let texto = &mut texto[..largo];
+    codigo.copy_into_slice(texto);
+    texto.make_ascii_lowercase();
+    let inicio = texto.iter().position(|b| *b != b' ')?;
+    let fin = texto.iter().rposition(|b| *b != b' ')? + 1;
+    let limpio = Bytes::from_slice(env, &texto[inicio..fin]);
+    Some(env.crypto().sha256(&limpio).to_bytes())
 }
 
 fn calificacion_de(env: &Env, evento_id: u32) -> Calificacion {

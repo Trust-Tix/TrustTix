@@ -1138,6 +1138,68 @@ fn si_se_cancela_el_evento_el_anticipo_se_devuelve() {
     assert_eq!(p.token.balance(&p.organizador), 0);
 }
 
+// ---------- Preventa ----------
+
+/// Huella del código «Club Fans» (en minúsculas), como la calcula la app.
+fn huella_club(env: &Env) -> soroban_sdk::BytesN<32> {
+    env.crypto()
+        .sha256(&Bytes::from_slice(env, b"club fans"))
+        .to_bytes()
+}
+
+#[test]
+fn con_el_codigo_de_preventa_se_compra_al_precio_especial_hasta_el_cupo() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let especial = 200_000_000; // 20 XLM
+    p.tix
+        .abrir_preventa(&evento, &huella_club(&p.env), &especial, &2);
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+
+    let fan = con_saldo(&p, especial * 2);
+    let boleto = p
+        .tix
+        .comprar_preventa(&fan, &evento, &texto(&p.env, " CLUB FANS "));
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, fan);
+    assert_eq!(p.token.balance(&fan), especial);
+    assert_eq!(p.token.balance(&p.organizador), especial - 6_000_000);
+
+    let otra = con_saldo(&p, especial);
+    p.tix
+        .comprar_preventa(&otra, &evento, &texto(&p.env, "club fans"));
+    // Cupo de 2 agotado.
+    assert_eq!(
+        p.tix
+            .try_comprar_preventa(&fan, &evento, &texto(&p.env, "club fans")),
+        Err(Ok(Error::PreventaAgotada))
+    );
+}
+
+#[test]
+fn la_preventa_pide_el_codigo_correcto_y_un_precio_valido() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    assert_eq!(
+        p.tix
+            .try_comprar_preventa(&fan, &evento, &texto(&p.env, "club fans")),
+        Err(Ok(Error::SinPreventa))
+    );
+    assert_eq!(
+        p.tix
+            .try_abrir_preventa(&evento, &huella_club(&p.env), &(PRECIO + 1), &5),
+        Err(Ok(Error::PrecioInvalido))
+    );
+    p.tix
+        .abrir_preventa(&evento, &huella_club(&p.env), &PRECIO, &5);
+    assert_eq!(
+        p.tix
+            .try_comprar_preventa(&fan, &evento, &texto(&p.env, "club fan")),
+        Err(Ok(Error::CodigoIncorrecto))
+    );
+    assert_eq!(p.token.balance(&fan), PRECIO);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
