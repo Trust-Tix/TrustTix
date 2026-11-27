@@ -1,5 +1,5 @@
 import { contract, rpc, scValToNative } from '@stellar/stellar-sdk'
-import { CONTRATO_ID, ES_MAINNET, RED, RPC_URL } from './config'
+import { COMISION_INCLUSION, CONTRATO_ID, ES_MAINNET, RED, RPC_URL } from './config'
 import { firmar } from './billetera'
 
 // Llamadas al contrato TrustTix. Las consultas se simulan contra la red
@@ -138,7 +138,7 @@ async function escribir(direccion, metodo, args) {
   const c = await cliente(direccion)
   let tx
   try {
-    tx = await c[metodo](args)
+    tx = await c[metodo](args, { fee: COMISION_INCLUSION })
     valor(tx, tx.result) // detecta errores del contrato antes de pedir la firma
     await tx.sign()
     const { hash, patrocinada } = await enviarFirmada(tx.signed)

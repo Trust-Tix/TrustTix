@@ -1,5 +1,5 @@
-import { Asset, BASE_FEE, Horizon, Memo, Operation, StrKey, TransactionBuilder } from '@stellar/stellar-sdk'
-import { FRIENDBOT_URL, HORIZON_URL, RED } from './config'
+import { Asset, Horizon, Memo, Operation, StrKey, TransactionBuilder } from '@stellar/stellar-sdk'
+import { COMISION_INCLUSION, FRIENDBOT_URL, HORIZON_URL, RED } from './config'
 import { firmar } from './billetera'
 
 // Operaciones de cuenta a través de Horizon: saldo, activación (solo Testnet),
@@ -65,7 +65,7 @@ export async function enviarXLM(origen, destino, monto, memo = '') {
   const operacion = existe
     ? Operation.payment({ destination: para, asset: Asset.native(), amount: texto })
     : Operation.createAccount({ destination: para, startingBalance: texto })
-  const constructor = new TransactionBuilder(cuenta, { fee: BASE_FEE, networkPassphrase: RED }).addOperation(operacion).setTimeout(120)
+  const constructor = new TransactionBuilder(cuenta, { fee: COMISION_INCLUSION, networkPassphrase: RED }).addOperation(operacion).setTimeout(120)
   if (nota) constructor.addMemo(Memo.text(nota))
   const tx = constructor.build()
 

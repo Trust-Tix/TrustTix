@@ -37,6 +37,11 @@ export const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || red.horizon
 // Friendbot regala XLM de prueba; en Mainnet no existe.
 export const FRIENDBOT_URL = ES_MAINNET ? null : 'https://friendbot.stellar.org'
 
+// Comisión de inclusión de cada transacción, en stroops: 0.001 XLM. La que usa
+// el SDK por defecto (100) queda debajo del mínimo que pide Mainnet en horas de
+// carga, y la red nunca toma la transacción. La de recursos de Soroban se suma aparte.
+export const COMISION_INCLUSION = '10000'
+
 // Unidad mínima de XLM: 1 XLM = 10,000,000 stroops.
 export const STROOPS_POR_XLM = 10_000_000n
 

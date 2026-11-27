@@ -1,5 +1,5 @@
 import { contract } from '@stellar/stellar-sdk'
-import { RED, RPC_URL } from './config'
+import { COMISION_INCLUSION, RED, RPC_URL } from './config'
 import { firmar } from './billetera'
 import { confirmar, enviarFirmada } from './contrato'
 
@@ -84,7 +84,7 @@ export async function reclamar(id, cuenta, codigo) {
   const c = await cliente(id, cuenta)
   let tx
   try {
-    tx = await c.reclamar({ cuenta, codigo })
+    tx = await c.reclamar({ cuenta, codigo }, { fee: COMISION_INCLUSION })
     valor(tx) // código incorrecto, ya reclamado o sin fondos: falla antes de pedir la firma
     await tx.sign()
     const { hash } = await enviarFirmada(tx.signed)
