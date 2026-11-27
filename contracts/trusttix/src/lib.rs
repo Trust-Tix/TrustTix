@@ -35,6 +35,10 @@ const TOPE_REVENTA_MINIMO: u32 = 10_000;
 const TOPE_REVENTA_MAXIMO: u32 = 15_000;
 /// Boletos que una cuenta puede comprar por evento, sumando todas sus compras.
 const LIMITE_POR_CUENTA: u32 = 10;
+/// Anticipo para apartar un lugar: 20 % del precio.
+const ANTICIPO: i128 = 2_000;
+/// Plazo para liquidar un apartado: 48 horas.
+const PLAZO_APARTADO: u64 = 48 * 60 * 60;
 /// Boletos que se reembolsan como máximo en una sola transacción. Cada uno
 /// escribe el boleto y el saldo de su dueño, y la red limita cuántos registros
 /// cambia una transacción.
@@ -70,6 +74,18 @@ pub enum Error {
     YaCalificado = 24,
     CalificacionInvalida = 25,
     NoHaEntrado = 26,
+    YaApartado = 27,
+    SinApartado = 28,
+    ApartadoVencido = 29,
+}
+
+/// Lugar apartado: lo que se dejó de anticipo y hasta cuándo (marca de tiempo
+/// del ledger) hay para liquidarlo.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Apartado {
+    pub anticipo: i128,
+    pub vence: u64,
 }
 
 /// Calificaciones de un evento: suma de estrellas y cuántas personas votaron.
@@ -147,6 +163,8 @@ enum Clave {
     Calificado(u32),
     /// Suma y número de calificaciones de un evento.
     Calificaciones(u32),
+    /// Lugar que una cuenta apartó en un evento.
+    Apartado(u32, Address),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -272,6 +290,32 @@ pub struct Reventa {
     pub comision: i128,
     /// Parte del precio que fue al organizador del evento.
     pub regalia: i128,
+}
+
+#[contractevent]
+pub struct LugarApartado {
+    #[topic]
+    pub evento: u32,
+    pub comprador: Address,
+    pub anticipo: i128,
+    pub vence: u64,
+}
+
+#[contractevent]
+pub struct ApartadoCompletado {
+    #[topic]
+    pub evento: u32,
+    pub comprador: Address,
+    pub boleto: u32,
+}
+
+#[contractevent]
+pub struct ApartadoLiberado {
+    #[topic]
+    pub evento: u32,
+    pub comprador: Address,
+    /// A quién fue el anticipo: al organizador o, si se canceló el evento, de vuelta a quien apartó.
+    pub anticipo_para: Address,
 }
 
 #[contractevent]
@@ -1135,6 +1179,152 @@ impl TrustTix {
         Ok(())
     }
 
+    // ---------- Apartados ----------
+
+    /// Aparta un lugar con el 20 % del precio. El lugar queda contado y hay 48
+    /// horas para liquidar el resto con `completar_apartado`. Una cuenta tiene
+    /// un apartado por evento, y cuenta en su límite de boletos.
+    pub fn apartar_lugar(env: Env, comprador: Address, evento_id: u32) -> Result<Apartado, Error> {
+        comprador.require_auth();
+        let clave = Clave::Apartado(evento_id, comprador.clone());
+        if env.storage().persistent().has(&clave) {
+            return Err(Error::YaApartado);
+        }
+        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
+        if evento.precio <= 0 {
+            return Err(Error::PrecioInvalido);
+        }
+
+        let anticipo = evento.precio * ANTICIPO / PUNTOS_BASE;
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &comprador,
+            env.current_contract_address(),
+            &anticipo,
+        );
+        evento.vendidos += 1;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+
+        let apartado = Apartado {
+            anticipo,
+            vence: env.ledger().timestamp() + PLAZO_APARTADO,
+        };
+        guardar(&env, &clave, &apartado);
+        LugarApartado {
+            evento: evento_id,
+            comprador,
+            anticipo,
+            vence: apartado.vence,
+        }
+        .publish(&env);
+        Ok(apartado)
+    }
+
+    /// Liquida un apartado vigente: paga el resto y recibe su boleto. El
+    /// organizador cobra el precio completo menos la comisión de TrustTix.
+    pub fn completar_apartado(env: Env, comprador: Address, evento_id: u32) -> Result<u32, Error> {
+        comprador.require_auth();
+        let clave = Clave::Apartado(evento_id, comprador.clone());
+        let apartado: Apartado = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::SinApartado)?;
+        if env.ledger().timestamp() > apartado.vence {
+            return Err(Error::ApartadoVencido);
+        }
+        let evento = leer_evento(&env, evento_id)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+
+        let puntos = comisiones(&env).compra;
+        let comision = cobrar(
+            &env,
+            &env.current_contract_address(),
+            &evento.organizador,
+            apartado.anticipo,
+            puntos,
+        ) + cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            evento.precio - apartado.anticipo,
+            puntos,
+        );
+        env.storage().persistent().remove(&clave);
+        let id = crear_boleto(&env, evento_id, &comprador);
+
+        Compra {
+            evento: evento_id,
+            boleto: id,
+            comprador: comprador.clone(),
+            precio: evento.precio,
+            comision,
+        }
+        .publish(&env);
+        ApartadoCompletado {
+            evento: evento_id,
+            comprador,
+            boleto: id,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    /// Libera un apartado y el lugar vuelve a la venta. Antes de que venza
+    /// solo lo libera quien apartó; después, cualquiera. El anticipo es para
+    /// el organizador, salvo que el evento se haya cancelado: entonces se
+    /// devuelve a quien apartó. Devuelve el anticipo.
+    pub fn liberar_apartado(env: Env, evento_id: u32, comprador: Address) -> Result<i128, Error> {
+        let clave = Clave::Apartado(evento_id, comprador.clone());
+        let apartado: Apartado = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::SinApartado)?;
+        let mut evento = leer_evento(&env, evento_id)?;
+        if !evento.cancelado && env.ledger().timestamp() <= apartado.vence {
+            comprador.require_auth();
+        }
+
+        let para = if evento.cancelado {
+            comprador.clone()
+        } else {
+            evento.organizador.clone()
+        };
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &env.current_contract_address(),
+            &para,
+            &apartado.anticipo,
+        );
+        env.storage().persistent().remove(&clave);
+        evento.vendidos -= 1;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        let compras = Clave::Compras(evento_id, comprador.clone());
+        let previas: u32 = env.storage().persistent().get(&compras).unwrap_or(1);
+        guardar(&env, &compras, &previas.saturating_sub(1));
+
+        ApartadoLiberado {
+            evento: evento_id,
+            comprador,
+            anticipo_para: para,
+        }
+        .publish(&env);
+        Ok(apartado.anticipo)
+    }
+
+    /// Apartado vigente de una cuenta en un evento.
+    pub fn consultar_apartado(
+        env: Env,
+        evento_id: u32,
+        comprador: Address,
+    ) -> Result<Apartado, Error> {
+        env.storage()
+            .persistent()
+            .get(&Clave::Apartado(evento_id, comprador))
+            .ok_or(Error::SinApartado)
+    }
+
     // ---------- Después del evento ----------
 
     /// Quien entró al evento lo califica de 1 a 5 estrellas, una vez por
@@ -1368,6 +1558,13 @@ fn preparar_compra(
 /// Emite un boleto del evento a nombre de `dueno` y suma un vendido.
 /// Quien llama guarda el evento al terminar.
 fn emitir(env: &Env, evento_id: u32, evento: &mut Evento, dueno: &Address) -> u32 {
+    evento.vendidos += 1;
+    crear_boleto(env, evento_id, dueno)
+}
+
+/// Crea el boleto sin contar un lugar más (para lugares que ya estaban
+/// contados, como un apartado).
+fn crear_boleto(env: &Env, evento_id: u32, dueno: &Address) -> u32 {
     let id = siguiente(env, Clave::TotalBoletos);
     let boleto = Boleto {
         evento: evento_id,
@@ -1378,7 +1575,6 @@ fn emitir(env: &Env, evento_id: u32, evento: &mut Evento, dueno: &Address) -> u3
     };
     guardar(env, &Clave::Boleto(id), &boleto);
     agregar_a(env, dueno, id);
-    evento.vendidos += 1;
     id
 }
 

@@ -1065,6 +1065,79 @@ fn renovar_mantiene_vivos_el_boleto_y_su_evento() {
     assert_eq!(p.tix.try_renovar(&99), Err(Ok(Error::BoletoNoExiste)));
 }
 
+// ---------- Apartados ----------
+
+#[test]
+fn apartar_y_completar_paga_lo_mismo_que_una_compra() {
+    let p = preparar();
+    let evento = crear(&p, 5, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+
+    let apartado = p.tix.apartar_lugar(&fan, &evento);
+    // 20 % de anticipo en garantía y el lugar queda contado.
+    assert_eq!(apartado.anticipo, 50_000_000);
+    assert_eq!(p.token.balance(&p.tix.address), 50_000_000);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 1);
+    assert_eq!(
+        p.tix.try_apartar_lugar(&fan, &evento),
+        Err(Ok(Error::YaApartado))
+    );
+
+    let boleto = p.tix.completar_apartado(&fan, &evento);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, fan);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 1);
+    // En total pagó el precio; el organizador recibe el 97 % y TrustTix el 3 %.
+    assert_eq!(p.token.balance(&fan), 0);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO - 7_500_000);
+    assert_eq!(p.token.balance(&p.admin), 7_500_000);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+    assert_eq!(
+        p.tix.try_consultar_apartado(&evento, &fan),
+        Err(Ok(Error::SinApartado))
+    );
+}
+
+#[test]
+fn un_apartado_vencido_se_libera_y_el_anticipo_es_del_organizador() {
+    use soroban_sdk::testutils::Ledger as _;
+    let p = preparar();
+    let evento = crear(&p, 1, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    let otra = con_saldo(&p, PRECIO);
+    p.tix.apartar_lugar(&fan, &evento);
+    // El único lugar está apartado.
+    assert_eq!(p.tix.try_comprar(&otra, &evento), Err(Ok(Error::Agotado)));
+
+    p.env.ledger().with_mut(|l| l.timestamp += 48 * 60 * 60 + 1);
+    assert_eq!(
+        p.tix.try_completar_apartado(&fan, &evento),
+        Err(Ok(Error::ApartadoVencido))
+    );
+    assert_eq!(p.tix.liberar_apartado(&evento, &fan), 50_000_000);
+
+    assert_eq!(p.token.balance(&p.organizador), 50_000_000);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 0);
+    // El lugar volvió a la venta.
+    p.tix.comprar(&otra, &evento);
+}
+
+#[test]
+fn si_se_cancela_el_evento_el_anticipo_se_devuelve() {
+    let p = preparar();
+    let evento = crear(&p, 5, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    p.tix.apartar_lugar(&fan, &evento);
+    p.tix.cancelar_evento(&evento);
+
+    assert_eq!(
+        p.tix.try_completar_apartado(&fan, &evento),
+        Err(Ok(Error::EventoCancelado))
+    );
+    p.tix.liberar_apartado(&evento, &fan);
+    assert_eq!(p.token.balance(&fan), PRECIO);
+    assert_eq!(p.token.balance(&p.organizador), 0);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
