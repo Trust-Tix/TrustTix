@@ -80,6 +80,8 @@ pub enum Error {
     SinPreventa = 30,
     CodigoIncorrecto = 31,
     PreventaAgotada = 32,
+    YaSalio = 33,
+    NoSalio = 34,
 }
 
 /// Preventa de un evento: huella del código, precio especial y cupo.
@@ -180,6 +182,8 @@ enum Clave {
     /// Lugar que una cuenta apartó en un evento.
     Apartado(u32, Address),
     Preventa(u32),
+    /// El dueño del boleto salió del evento y puede volver a entrar.
+    Fuera(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -305,6 +309,23 @@ pub struct Reventa {
     pub comision: i128,
     /// Parte del precio que fue al organizador del evento.
     pub regalia: i128,
+}
+
+#[contractevent]
+pub struct Salida {
+    #[topic]
+    pub boleto: u32,
+    pub personal: Address,
+    /// true al salir, false al volver a entrar.
+    pub fuera: bool,
+}
+
+#[contractevent]
+pub struct Propina {
+    #[topic]
+    pub evento: u32,
+    pub de: Address,
+    pub monto: i128,
 }
 
 #[contractevent]
@@ -1468,6 +1489,74 @@ impl TrustTix {
         Ok(id)
     }
 
+    // ---------- En el evento ----------
+
+    /// En eventos con reingreso (festivales, partidos con medio tiempo), el
+    /// personal anota que el dueño de un boleto ya usado salió.
+    pub fn registrar_salida(env: Env, personal: Address, boleto_id: u32) -> Result<(), Error> {
+        personal.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
+        if !es_autorizado(&env, boleto.evento, &personal)? {
+            return Err(Error::NoAutorizado);
+        }
+        if !boleto.usado {
+            return Err(Error::NoHaEntrado);
+        }
+        if env.storage().persistent().has(&Clave::Fuera(boleto_id)) {
+            return Err(Error::YaSalio);
+        }
+        guardar(&env, &Clave::Fuera(boleto_id), &true);
+        Salida {
+            boleto: boleto_id,
+            personal,
+            fuera: true,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// El dueño vuelve a entrar con el mismo boleto, solo si antes salió. Un
+    /// boleto que no salió no puede usarse para meter a otra persona.
+    pub fn registrar_reingreso(env: Env, personal: Address, boleto_id: u32) -> Result<(), Error> {
+        personal.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
+        if !es_autorizado(&env, boleto.evento, &personal)? {
+            return Err(Error::NoAutorizado);
+        }
+        if !env.storage().persistent().has(&Clave::Fuera(boleto_id)) {
+            return Err(Error::NoSalio);
+        }
+        env.storage().persistent().remove(&Clave::Fuera(boleto_id));
+        Salida {
+            boleto: boleto_id,
+            personal,
+            fuera: false,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Cualquiera apoya al artista con una propina en XLM que llega completa
+    /// al organizador del evento, sin comisión de TrustTix.
+    pub fn dar_propina(env: Env, de: Address, evento_id: u32, monto: i128) -> Result<(), Error> {
+        de.require_auth();
+        let evento = leer_evento(&env, evento_id)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if monto <= 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        token::Client::new(&env, &token_de_pago(&env)).transfer(&de, &evento.organizador, &monto);
+        Propina {
+            evento: evento_id,
+            de,
+            monto,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
     // ---------- Después del evento ----------
 
     /// Quien entró al evento lo califica de 1 a 5 estrellas, una vez por
@@ -1624,6 +1713,17 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+/// ¿`personal` es el organizador del evento o alguien que él autorizó?
+fn es_autorizado(env: &Env, evento_id: u32, personal: &Address) -> Result<bool, Error> {
+    let evento = leer_evento(env, evento_id)?;
+    Ok(*personal == evento.organizador
+        || env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&Clave::Personal(evento_id, personal.clone()))
+            .unwrap_or(false))
 }
 
 /// SHA-256 de un código en minúsculas y sin espacios al inicio ni al final.

@@ -1245,6 +1245,62 @@ fn emitir_cortesias_regala_a_todos_o_a_nadie() {
     assert_eq!(p.tix.consultar_evento(&evento).vendidos, 2);
 }
 
+// ---------- En el evento ----------
+
+#[test]
+fn quien_sale_puede_volver_a_entrar_una_vez_por_salida() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let fan = Address::generate(&p.env);
+    let personal = Address::generate(&p.env);
+    let boleto = p.tix.comprar(&fan, &evento);
+    p.tix.autorizar_personal(&evento, &personal);
+
+    // Sin haber entrado no hay salida.
+    assert_eq!(
+        p.tix.try_registrar_salida(&personal, &boleto),
+        Err(Ok(Error::NoHaEntrado))
+    );
+    p.tix.registrar_entrada(&boleto, &personal);
+    // Sin haber salido no hay reingreso: el boleto no mete a otra persona.
+    assert_eq!(
+        p.tix.try_registrar_reingreso(&personal, &boleto),
+        Err(Ok(Error::NoSalio))
+    );
+
+    p.tix.registrar_salida(&personal, &boleto);
+    assert_eq!(
+        p.tix.try_registrar_salida(&personal, &boleto),
+        Err(Ok(Error::YaSalio))
+    );
+    p.tix.registrar_reingreso(&personal, &boleto);
+    assert_eq!(
+        p.tix.try_registrar_reingreso(&personal, &boleto),
+        Err(Ok(Error::NoSalio))
+    );
+    let colado = Address::generate(&p.env);
+    assert_eq!(
+        p.tix.try_registrar_salida(&colado, &boleto),
+        Err(Ok(Error::NoAutorizado))
+    );
+}
+
+#[test]
+fn la_propina_llega_completa_al_organizador() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let fan = con_saldo(&p, 50_000_000);
+
+    p.tix.dar_propina(&fan, &evento, &50_000_000);
+    assert_eq!(p.env.auths()[0].0, fan);
+    assert_eq!(p.token.balance(&p.organizador), 50_000_000);
+    assert_eq!(p.token.balance(&p.admin), 0);
+    assert_eq!(
+        p.tix.try_dar_propina(&fan, &evento, &0),
+        Err(Ok(Error::PrecioInvalido))
+    );
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
