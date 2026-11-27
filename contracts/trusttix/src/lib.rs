@@ -163,6 +163,14 @@ pub struct Regalo {
 }
 
 #[contractevent]
+pub struct Devolucion {
+    #[topic]
+    pub boleto: u32,
+    pub evento: u32,
+    pub dueno: Address,
+}
+
+#[contractevent]
 pub struct OfertaHecha {
     #[topic]
     pub boleto: u32,
@@ -557,6 +565,36 @@ impl TrustTix {
     pub fn transferir(env: Env, boleto_id: u32, de: Address, a: Address) -> Result<(), Error> {
         de.require_auth();
         mover(&env, boleto_id, &de, &a)
+    }
+
+    /// Devolución acordada: el dueño entrega su boleto y el organizador le
+    /// regresa el precio original. Firman los dos. El boleto queda sin validez
+    /// y su lugar vuelve a la venta. Devuelve el monto regresado.
+    pub fn devolver_boleto(env: Env, boleto_id: u32) -> Result<i128, Error> {
+        let mut boleto = leer_boleto(&env, boleto_id)?;
+        let mut evento = leer_evento(&env, boleto.evento)?;
+        boleto.dueno.require_auth();
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if boleto.usado {
+            return Err(Error::YaUsado);
+        }
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
+        }
+
+        devolver_precio(&env, &evento, boleto_id, &mut boleto);
+        evento.vendidos -= 1;
+        guardar(&env, &Clave::Evento(boleto.evento), &evento);
+        Devolucion {
+            boleto: boleto_id,
+            evento: boleto.evento,
+            dueno: boleto.dueno,
+        }
+        .publish(&env);
+        Ok(evento.precio)
     }
 
     // ---------- Ofertas ----------

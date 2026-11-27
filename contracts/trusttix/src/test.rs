@@ -737,6 +737,35 @@ fn las_ofertas_respetan_el_tope_y_al_dueno() {
     assert_eq!(p.token.balance(&p.tix.address), PRECIO);
 }
 
+// ---------- Devolución acordada ----------
+
+#[test]
+fn devolver_boleto_regresa_el_precio_y_libera_el_lugar() {
+    let p = preparar();
+    let evento = crear(&p, 1, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    let boleto = p.tix.comprar(&fan, &evento);
+    // El evento estaba agotado; el organizador pone la comisión que no recibió.
+    StellarAssetClient::new(&p.env, &p.token.address).mint(&p.organizador, &7_500_000);
+
+    assert_eq!(p.tix.devolver_boleto(&boleto), PRECIO);
+    // Firman el dueño y el organizador.
+    let firmas = p.env.auths();
+    assert!(firmas.iter().any(|f| f.0 == fan));
+    assert!(firmas.iter().any(|f| f.0 == p.organizador));
+
+    assert_eq!(p.token.balance(&fan), PRECIO);
+    assert!(p.tix.consultar_boleto(&boleto).reembolsado);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 0);
+    // El lugar volvió a la venta.
+    let otra = con_saldo(&p, PRECIO);
+    p.tix.comprar(&otra, &evento);
+    assert_eq!(
+        p.tix.try_devolver_boleto(&boleto),
+        Err(Ok(Error::YaReembolsado))
+    );
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
