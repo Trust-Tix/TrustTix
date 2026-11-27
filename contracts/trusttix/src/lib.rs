@@ -645,6 +645,57 @@ impl TrustTix {
         ventas_pausadas(&env, evento_id)
     }
 
+    /// El organizador autoriza de una vez a todo su personal de acceso (hasta
+    /// 10 cuentas) para registrar entradas en su evento.
+    pub fn autorizar_personal_varios(
+        env: Env,
+        evento_id: u32,
+        cuentas: Vec<Address>,
+    ) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if cuentas.is_empty() || cuentas.len() > LIMITE_POR_CUENTA {
+            return Err(Error::CantidadInvalida);
+        }
+        for cuenta in cuentas.iter() {
+            guardar(&env, &Clave::Personal(evento_id, cuenta), &true);
+        }
+        Ok(())
+    }
+
+    /// El organizador regala cortesías a varias personas (hasta 10) con una
+    /// sola firma. Todas caben en la capacidad o no se emite ninguna.
+    pub fn emitir_cortesias(
+        env: Env,
+        evento_id: u32,
+        para: Vec<Address>,
+    ) -> Result<Vec<u32>, Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if para.is_empty() || para.len() > LIMITE_POR_CUENTA {
+            return Err(Error::CantidadInvalida);
+        }
+        if evento.vendidos + para.len() > evento.capacidad {
+            return Err(Error::Agotado);
+        }
+        let mut boletos = Vec::new(&env);
+        for cuenta in para.iter() {
+            let id = emitir(&env, evento_id, &mut evento, &cuenta);
+            Cortesia {
+                evento: evento_id,
+                boleto: id,
+                para: cuenta,
+            }
+            .publish(&env);
+            boletos.push_back(id);
+        }
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        Ok(boletos)
+    }
+
     /// El organizador fija el precio máximo de reventa de su evento, en puntos
     /// base sobre el precio original (10,000 = 100 %, 15,000 = 150 %). Aplica
     /// también a los boletos que ya estaban en reventa.

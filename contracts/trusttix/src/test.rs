@@ -1200,6 +1200,51 @@ fn la_preventa_pide_el_codigo_correcto_y_un_precio_valido() {
     assert_eq!(p.token.balance(&fan), PRECIO);
 }
 
+// ---------- Por grupo, para el organizador ----------
+
+#[test]
+fn el_organizador_autoriza_a_todo_su_personal_de_una_vez() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let a = Address::generate(&p.env);
+    let b = Address::generate(&p.env);
+
+    p.tix
+        .autorizar_personal_varios(&evento, &Vec::from_array(&p.env, [a.clone(), b.clone()]));
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert!(p.tix.es_personal(&evento, &a));
+    assert!(p.tix.es_personal(&evento, &b));
+    assert_eq!(
+        p.tix
+            .try_autorizar_personal_varios(&evento, &Vec::new(&p.env)),
+        Err(Ok(Error::CantidadInvalida))
+    );
+}
+
+#[test]
+fn emitir_cortesias_regala_a_todos_o_a_nadie() {
+    let p = preparar();
+    let evento = crear(&p, 3, PRECIO);
+    let invitados = Vec::from_array(
+        &p.env,
+        [Address::generate(&p.env), Address::generate(&p.env)],
+    );
+
+    let boletos = p.tix.emitir_cortesias(&evento, &invitados);
+    assert_eq!(boletos.len(), 2);
+    assert_eq!(
+        p.tix.consultar_boleto(&boletos.get(1).unwrap()).dueno,
+        invitados.get(1).unwrap()
+    );
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 2);
+    // Queda un lugar: dos cortesías más no caben y no se emite ninguna.
+    assert_eq!(
+        p.tix.try_emitir_cortesias(&evento, &invitados),
+        Err(Ok(Error::Agotado))
+    );
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 2);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
