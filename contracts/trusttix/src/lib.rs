@@ -62,6 +62,7 @@ pub enum Error {
     YaReembolsado = 16,
     LimitePorCuenta = 17,
     CantidadInvalida = 18,
+    NoHayOferta = 19,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -117,6 +118,8 @@ enum Clave {
     Reventa(u32),
     /// Boletos que una cuenta ha pagado en un evento.
     Compras(u32, Address),
+    /// Dinero en garantía que una cuenta ofrece por un boleto.
+    Oferta(u32, Address),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -157,6 +160,21 @@ pub struct Regalo {
     pub boleto: u32,
     pub de: Address,
     pub para: Address,
+}
+
+#[contractevent]
+pub struct OfertaHecha {
+    #[topic]
+    pub boleto: u32,
+    pub comprador: Address,
+    pub precio: i128,
+}
+
+#[contractevent]
+pub struct OfertaRetirada {
+    #[topic]
+    pub boleto: u32,
+    pub comprador: Address,
 }
 
 #[contractevent]
@@ -538,34 +556,132 @@ impl TrustTix {
     /// Solo el dueño actual puede transferir, y nunca un boleto ya usado.
     pub fn transferir(env: Env, boleto_id: u32, de: Address, a: Address) -> Result<(), Error> {
         de.require_auth();
-        let mut boleto = leer_boleto(&env, boleto_id)?;
-        if boleto.dueno != de {
-            return Err(Error::NoEsDueno);
-        }
+        mover(&env, boleto_id, &de, &a)
+    }
+
+    // ---------- Ofertas ----------
+
+    /// Ofrece comprar un boleto que no está en reventa. El dinero queda en
+    /// garantía en el contrato hasta que el dueño acepte o quien oferta la
+    /// retire. Ofertar otra vez por el mismo boleto reemplaza la oferta.
+    pub fn ofertar(
+        env: Env,
+        comprador: Address,
+        boleto_id: u32,
+        precio: i128,
+    ) -> Result<(), Error> {
+        comprador.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
         if boleto.usado {
             return Err(Error::YaUsado);
         }
         if boleto.reembolsado {
             return Err(Error::YaReembolsado);
         }
-        if de == a {
+        if boleto.dueno == comprador {
             return Err(Error::MismoDueno);
         }
+        let evento = leer_evento(&env, boleto.evento)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if precio <= 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        if precio > precio_maximo(&evento) {
+            return Err(Error::SobreTope);
+        }
 
-        boleto.dueno = a.clone();
-        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
-        quitar_de(&env, &de, boleto_id);
-        agregar_a(&env, &a, boleto_id);
-        // Si estaba en reventa, la oferta era del dueño anterior: se retira.
-        retirar_reventa(&env, boleto_id);
-
-        Transferencia {
+        let token = token::Client::new(&env, &token_de_pago(&env));
+        let contrato = env.current_contract_address();
+        let clave = Clave::Oferta(boleto_id, comprador.clone());
+        if let Some(anterior) = env.storage().persistent().get::<_, i128>(&clave) {
+            token.transfer(&contrato, &comprador, &anterior);
+        }
+        token.transfer(&comprador, &contrato, &precio);
+        guardar(&env, &clave, &precio);
+        OfertaHecha {
             boleto: boleto_id,
-            de,
-            a,
+            comprador,
+            precio,
         }
         .publish(&env);
         Ok(())
+    }
+
+    /// El dueño acepta una oferta: recibe el precio menos la comisión de
+    /// reventa y el boleto pasa a quien ofertó, en una sola transacción.
+    pub fn aceptar_oferta(
+        env: Env,
+        boleto_id: u32,
+        vendedor: Address,
+        comprador: Address,
+    ) -> Result<(), Error> {
+        vendedor.require_auth();
+        let clave = Clave::Oferta(boleto_id, comprador.clone());
+        let precio: i128 = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::NoHayOferta)?;
+        let boleto = leer_boleto(&env, boleto_id)?;
+        let evento = leer_evento(&env, boleto.evento)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if precio > precio_maximo(&evento) {
+            return Err(Error::SobreTope);
+        }
+
+        mover(&env, boleto_id, &vendedor, &comprador)?;
+        env.storage().persistent().remove(&clave);
+        let comision = cobrar(
+            &env,
+            &env.current_contract_address(),
+            &vendedor,
+            precio,
+            comisiones(&env).reventa,
+        );
+        Reventa {
+            boleto: boleto_id,
+            vendedor,
+            comprador,
+            precio,
+            comision,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Quien ofertó recupera su dinero si nadie aceptó. Devuelve el monto.
+    pub fn retirar_oferta(env: Env, boleto_id: u32, comprador: Address) -> Result<i128, Error> {
+        comprador.require_auth();
+        let clave = Clave::Oferta(boleto_id, comprador.clone());
+        let precio: i128 = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::NoHayOferta)?;
+        env.storage().persistent().remove(&clave);
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &env.current_contract_address(),
+            &comprador,
+            &precio,
+        );
+        OfertaRetirada {
+            boleto: boleto_id,
+            comprador,
+        }
+        .publish(&env);
+        Ok(precio)
+    }
+
+    /// Monto que `comprador` tiene ofertado por un boleto.
+    pub fn consultar_oferta(env: Env, boleto_id: u32, comprador: Address) -> Result<i128, Error> {
+        env.storage()
+            .persistent()
+            .get(&Clave::Oferta(boleto_id, comprador))
+            .ok_or(Error::NoHayOferta)
     }
 
     // ---------- Reventa ----------
@@ -880,6 +996,39 @@ fn devolver_precio(env: &Env, evento: &Evento, boleto_id: u32, boleto: &mut Bole
         monto: evento.precio,
     }
     .publish(env);
+}
+
+/// Cambia el dueño de un boleto con las reglas de una transferencia: solo el
+/// dueño actual, nunca un boleto usado o reembolsado, y nunca a sí mismo.
+fn mover(env: &Env, boleto_id: u32, de: &Address, a: &Address) -> Result<(), Error> {
+    let mut boleto = leer_boleto(env, boleto_id)?;
+    if boleto.dueno != *de {
+        return Err(Error::NoEsDueno);
+    }
+    if boleto.usado {
+        return Err(Error::YaUsado);
+    }
+    if boleto.reembolsado {
+        return Err(Error::YaReembolsado);
+    }
+    if de == a {
+        return Err(Error::MismoDueno);
+    }
+
+    boleto.dueno = a.clone();
+    guardar(env, &Clave::Boleto(boleto_id), &boleto);
+    quitar_de(env, de, boleto_id);
+    agregar_a(env, a, boleto_id);
+    // Si estaba en reventa, la oferta era del dueño anterior: se retira.
+    retirar_reventa(env, boleto_id);
+
+    Transferencia {
+        boleto: boleto_id,
+        de: de.clone(),
+        a: a.clone(),
+    }
+    .publish(env);
+    Ok(())
 }
 
 /// Precio más alto al que se puede revender un boleto del evento.

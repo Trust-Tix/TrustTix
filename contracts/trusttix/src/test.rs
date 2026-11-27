@@ -654,6 +654,89 @@ fn reembolsar_lote_acepta_hasta_diez_boletos() {
     }
 }
 
+// ---------- Ofertas ----------
+
+#[test]
+fn aceptar_una_oferta_paga_al_dueno_y_le_pasa_el_boleto_a_quien_oferto() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let comision_compra = p.token.balance(&p.admin);
+    let oferta = 260_000_000; // 26 XLM, dentro del tope de 27.5
+    let interesado = con_saldo(&p, oferta);
+
+    p.tix.ofertar(&interesado, &boleto, &oferta);
+    // El dinero queda en garantía en el contrato.
+    assert_eq!(p.token.balance(&interesado), 0);
+    assert_eq!(p.token.balance(&p.tix.address), oferta);
+    assert_eq!(p.tix.consultar_oferta(&boleto, &interesado), oferta);
+
+    p.tix.aceptar_oferta(&boleto, &dueno, &interesado);
+    assert_eq!(p.env.auths()[0].0, dueno);
+
+    // 2 % para TrustTix y el resto para quien vendió.
+    assert_eq!(p.token.balance(&p.admin) - comision_compra, 5_200_000);
+    assert_eq!(p.token.balance(&dueno), oferta - 5_200_000);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, interesado);
+    assert_eq!(
+        p.tix.try_consultar_oferta(&boleto, &interesado),
+        Err(Ok(Error::NoHayOferta))
+    );
+}
+
+#[test]
+fn retirar_una_oferta_devuelve_el_dinero_y_ofertar_otra_vez_la_reemplaza() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let interesado = con_saldo(&p, PRECIO * 2);
+
+    p.tix.ofertar(&interesado, &boleto, &200_000_000);
+    p.tix.ofertar(&interesado, &boleto, &PRECIO);
+    // Solo queda en garantía la última oferta.
+    assert_eq!(p.token.balance(&p.tix.address), PRECIO);
+    assert_eq!(p.token.balance(&interesado), PRECIO);
+
+    assert_eq!(p.tix.retirar_oferta(&boleto, &interesado), PRECIO);
+    assert_eq!(p.token.balance(&interesado), PRECIO * 2);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+    assert_eq!(
+        p.tix.try_aceptar_oferta(&boleto, &dueno, &interesado),
+        Err(Ok(Error::NoHayOferta))
+    );
+    assert_eq!(
+        p.tix.try_retirar_oferta(&boleto, &interesado),
+        Err(Ok(Error::NoHayOferta))
+    );
+}
+
+#[test]
+fn las_ofertas_respetan_el_tope_y_al_dueno() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let interesado = con_saldo(&p, PRECIO * 2);
+    let extrano = Address::generate(&p.env);
+
+    assert_eq!(
+        p.tix.try_ofertar(&interesado, &boleto, &275_000_001),
+        Err(Ok(Error::SobreTope))
+    );
+    assert_eq!(
+        p.tix.try_ofertar(&interesado, &boleto, &0),
+        Err(Ok(Error::PrecioInvalido))
+    );
+    assert_eq!(
+        p.tix.try_ofertar(&dueno, &boleto, &PRECIO),
+        Err(Ok(Error::MismoDueno))
+    );
+    // Solo el dueño acepta, y el dinero sigue en garantía si falla.
+    p.tix.ofertar(&interesado, &boleto, &PRECIO);
+    assert_eq!(
+        p.tix.try_aceptar_oferta(&boleto, &extrano, &interesado),
+        Err(Ok(Error::NoEsDueno))
+    );
+    assert_eq!(p.token.balance(&p.tix.address), PRECIO);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
