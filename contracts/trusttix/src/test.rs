@@ -519,6 +519,93 @@ fn un_boleto_usado_o_gratis_no_mueve_dinero_al_reembolsar() {
     assert_eq!(p.token.balance(&no_fue), 0);
 }
 
+// ---------- Compras de varios boletos y de regalo ----------
+
+#[test]
+fn comprar_varios_cobra_una_vez_y_emite_todos_los_boletos() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let comprador = con_saldo(&p, PRECIO * 3);
+
+    let boletos = p.tix.comprar_varios(&comprador, &evento, &3);
+
+    assert_eq!(boletos.len(), 3);
+    assert_eq!(p.tix.boletos_de(&comprador), boletos);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 3);
+    // 3 % del total para TrustTix y el resto para el organizador.
+    assert_eq!(p.token.balance(&comprador), 0);
+    assert_eq!(p.token.balance(&p.admin), 22_500_000);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO * 3 - 22_500_000);
+    for id in boletos.iter() {
+        assert_eq!(p.tix.consultar_boleto(&id).dueno, comprador);
+    }
+}
+
+#[test]
+fn ninguna_cuenta_pasa_de_diez_boletos_por_evento() {
+    let p = preparar();
+    let evento = crear(&p, 50, 0);
+    let fan = Address::generate(&p.env);
+
+    p.tix.comprar_varios(&fan, &evento, &8);
+    p.tix.comprar(&fan, &evento);
+    // 9 ya comprados: 2 más pasarían de 10.
+    assert_eq!(
+        p.tix.try_comprar_varios(&fan, &evento, &2),
+        Err(Ok(Error::LimitePorCuenta))
+    );
+    p.tix.comprar(&fan, &evento);
+    assert_eq!(
+        p.tix.try_comprar(&fan, &evento),
+        Err(Ok(Error::LimitePorCuenta))
+    );
+    assert_eq!(p.tix.boletos_de(&fan).len(), 10);
+    // El límite es por evento: en otro evento puede volver a comprar.
+    let otro = crear(&p, 50, 0);
+    p.tix.comprar(&fan, &otro);
+}
+
+#[test]
+fn comprar_varios_respeta_la_capacidad_y_la_cantidad() {
+    let p = preparar();
+    let evento = crear(&p, 3, 0);
+    let fan = Address::generate(&p.env);
+
+    assert_eq!(
+        p.tix.try_comprar_varios(&fan, &evento, &4),
+        Err(Ok(Error::Agotado))
+    );
+    assert_eq!(
+        p.tix.try_comprar_varios(&fan, &evento, &0),
+        Err(Ok(Error::CantidadInvalida))
+    );
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 0);
+    p.tix.comprar_varios(&fan, &evento, &3);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 3);
+}
+
+#[test]
+fn comprar_para_regala_el_boleto_y_cobra_a_quien_paga() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let quien_paga = con_saldo(&p, PRECIO);
+    let amiga = Address::generate(&p.env);
+
+    let boleto = p.tix.comprar_para(&quien_paga, &amiga, &evento);
+    // Lo firma quien paga.
+    assert_eq!(p.env.auths()[0].0, quien_paga);
+
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, amiga);
+    assert_eq!(p.tix.boletos_de(&amiga).len(), 1);
+    assert_eq!(p.tix.boletos_de(&quien_paga).len(), 0);
+    assert_eq!(p.token.balance(&quien_paga), 0);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO - 7_500_000);
+    assert_eq!(
+        p.tix.try_comprar_para(&amiga, &amiga, &evento),
+        Err(Ok(Error::MismoDueno))
+    );
+}
+
 #[test]
 fn validaciones_al_crear_y_consultar() {
     let p = preparar();

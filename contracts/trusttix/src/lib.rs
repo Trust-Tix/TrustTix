@@ -33,6 +33,8 @@ const TOPE_REVENTA_INICIAL: u32 = 11_000;
 /// revende) y el 150 % del precio original.
 const TOPE_REVENTA_MINIMO: u32 = 10_000;
 const TOPE_REVENTA_MAXIMO: u32 = 15_000;
+/// Boletos que una cuenta puede comprar por evento, sumando todas sus compras.
+const LIMITE_POR_CUENTA: u32 = 10;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -54,6 +56,8 @@ pub enum Error {
     EventoCancelado = 14,
     EventoActivo = 15,
     YaReembolsado = 16,
+    LimitePorCuenta = 17,
+    CantidadInvalida = 18,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -107,6 +111,8 @@ enum Clave {
     BoletosDe(Address),
     /// Precio al que el dueño ofrece el boleto en reventa.
     Reventa(u32),
+    /// Boletos que una cuenta ha pagado en un evento.
+    Compras(u32, Address),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -128,6 +134,25 @@ pub struct Compra {
     pub precio: i128,
     /// Parte del precio que fue a TrustTix.
     pub comision: i128,
+}
+
+#[contractevent]
+pub struct CompraVarios {
+    #[topic]
+    pub evento: u32,
+    pub comprador: Address,
+    pub boletos: Vec<u32>,
+    pub total: i128,
+    /// Parte del total que fue a TrustTix.
+    pub comision: i128,
+}
+
+#[contractevent]
+pub struct Regalo {
+    #[topic]
+    pub boleto: u32,
+    pub de: Address,
+    pub para: Address,
 }
 
 #[contractevent]
@@ -382,14 +407,7 @@ impl TrustTix {
     /// quedan lugares.
     pub fn comprar(env: Env, comprador: Address, evento_id: u32) -> Result<u32, Error> {
         comprador.require_auth();
-        let mut evento = leer_evento(&env, evento_id)?;
-        if evento.cancelado {
-            return Err(Error::EventoCancelado);
-        }
-        if evento.vendidos >= evento.capacidad {
-            return Err(Error::Agotado);
-        }
-
+        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
         let comision = cobrar(
             &env,
             &comprador,
@@ -397,19 +415,7 @@ impl TrustTix {
             evento.precio,
             comisiones(&env).compra,
         );
-
-        let id = siguiente(&env, Clave::TotalBoletos);
-        let boleto = Boleto {
-            evento: evento_id,
-            dueno: comprador.clone(),
-            usado: false,
-            usado_en: 0,
-            reembolsado: false,
-        };
-        guardar(&env, &Clave::Boleto(id), &boleto);
-        agregar_a(&env, &comprador, id);
-
-        evento.vendidos += 1;
+        let id = emitir(&env, evento_id, &mut evento, &comprador);
         guardar(&env, &Clave::Evento(evento_id), &evento);
 
         Compra {
@@ -418,6 +424,86 @@ impl TrustTix {
             comprador,
             precio: evento.precio,
             comision,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    /// Compra varios boletos del mismo evento en una sola transacción: un cobro
+    /// por el total, una comisión y todos los boletos a nombre del comprador.
+    /// Ninguna cuenta pasa de 10 boletos por evento.
+    pub fn comprar_varios(
+        env: Env,
+        comprador: Address,
+        evento_id: u32,
+        cantidad: u32,
+    ) -> Result<Vec<u32>, Error> {
+        comprador.require_auth();
+        if cantidad == 0 {
+            return Err(Error::CantidadInvalida);
+        }
+        let mut evento = preparar_compra(&env, &comprador, evento_id, cantidad)?;
+        let total = evento.precio * cantidad as i128;
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            total,
+            comisiones(&env).compra,
+        );
+
+        let mut boletos = Vec::new(&env);
+        for _ in 0..cantidad {
+            boletos.push_back(emitir(&env, evento_id, &mut evento, &comprador));
+        }
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+
+        CompraVarios {
+            evento: evento_id,
+            comprador,
+            boletos: boletos.clone(),
+            total,
+            comision,
+        }
+        .publish(&env);
+        Ok(boletos)
+    }
+
+    /// Compra un boleto de regalo: paga `comprador` y el boleto queda desde el
+    /// inicio a nombre de `para`. El regalo cuenta en el límite de quien paga.
+    pub fn comprar_para(
+        env: Env,
+        comprador: Address,
+        para: Address,
+        evento_id: u32,
+    ) -> Result<u32, Error> {
+        comprador.require_auth();
+        if comprador == para {
+            return Err(Error::MismoDueno);
+        }
+        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            evento.precio,
+            comisiones(&env).compra,
+        );
+        let id = emitir(&env, evento_id, &mut evento, &para);
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+
+        Compra {
+            evento: evento_id,
+            boleto: id,
+            comprador: comprador.clone(),
+            precio: evento.precio,
+            comision,
+        }
+        .publish(&env);
+        Regalo {
+            boleto: id,
+            de: comprador,
+            para,
         }
         .publish(&env);
         Ok(id)
@@ -704,6 +790,48 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     }
     token.transfer(de, para, &(precio - comision));
     comision
+}
+
+/// Revisa que `comprador` pueda pagar `cantidad` boletos más del evento: que no
+/// esté cancelado, que queden lugares y que no pase del límite por cuenta.
+/// Deja anotadas sus compras y devuelve el evento para emitir los boletos.
+fn preparar_compra(
+    env: &Env,
+    comprador: &Address,
+    evento_id: u32,
+    cantidad: u32,
+) -> Result<Evento, Error> {
+    let evento = leer_evento(env, evento_id)?;
+    if evento.cancelado {
+        return Err(Error::EventoCancelado);
+    }
+    if evento.vendidos + cantidad > evento.capacidad {
+        return Err(Error::Agotado);
+    }
+    let clave = Clave::Compras(evento_id, comprador.clone());
+    let previas: u32 = env.storage().persistent().get(&clave).unwrap_or(0);
+    if previas + cantidad > LIMITE_POR_CUENTA {
+        return Err(Error::LimitePorCuenta);
+    }
+    guardar(env, &clave, &(previas + cantidad));
+    Ok(evento)
+}
+
+/// Emite un boleto del evento a nombre de `dueno` y suma un vendido.
+/// Quien llama guarda el evento al terminar.
+fn emitir(env: &Env, evento_id: u32, evento: &mut Evento, dueno: &Address) -> u32 {
+    let id = siguiente(env, Clave::TotalBoletos);
+    let boleto = Boleto {
+        evento: evento_id,
+        dueno: dueno.clone(),
+        usado: false,
+        usado_en: 0,
+        reembolsado: false,
+    };
+    guardar(env, &Clave::Boleto(id), &boleto);
+    agregar_a(env, dueno, id);
+    evento.vendidos += 1;
+    id
 }
 
 /// Precio más alto al que se puede revender un boleto del evento.
