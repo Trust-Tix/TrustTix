@@ -1,0 +1,21 @@
+[package]
+name = "trusttix-mainnet"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+# Contrato que se despliega en Mainnet: el núcleo que usa la app (compra con
+# comisión, reventa con tope, transferencias, entradas, cancelación y
+# reembolso) más `actualizar`, para agregar funciones después sin desplegar
+# otro contrato. Las funciones nuevas se prueban primero en Testnet, en
+# contracts/trusttix.
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

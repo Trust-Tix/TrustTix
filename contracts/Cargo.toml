@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["trusttix", "boveda"]
+members = ["trusttix", "trusttix-mainnet", "boveda"]
 
 [workspace.dependencies]
 soroban-sdk = "28"
