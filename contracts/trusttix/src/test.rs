@@ -3,7 +3,7 @@
 use super::*;
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{Address, Bytes, Env, String};
+use soroban_sdk::{Address, Bytes, Env, String, Vec};
 
 const PRECIO: i128 = 250_000_000; // 25 XLM
 /// Comisiones de TrustTix en puntos base: 3 % por compra y 2 % por reventa.
@@ -764,6 +764,67 @@ fn devolver_boleto_regresa_el_precio_y_libera_el_lugar() {
         p.tix.try_devolver_boleto(&boleto),
         Err(Ok(Error::YaReembolsado))
     );
+}
+
+// ---------- Grupos ----------
+
+#[test]
+fn transferir_varios_mueve_todo_el_grupo_o_nada() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let dueno = Address::generate(&p.env);
+    let amigo = Address::generate(&p.env);
+    let otro = Address::generate(&p.env);
+    let mios = p.tix.comprar_varios(&dueno, &evento, &3);
+    let ajeno = p.tix.comprar(&otro, &evento);
+
+    // Si un boleto del grupo no es suyo, no se mueve ninguno.
+    let mut con_ajeno = mios.clone();
+    con_ajeno.push_back(ajeno);
+    assert_eq!(
+        p.tix.try_transferir_varios(&dueno, &con_ajeno, &amigo),
+        Err(Ok(Error::NoEsDueno))
+    );
+    assert_eq!(p.tix.boletos_de(&dueno).len(), 3);
+
+    p.tix.transferir_varios(&dueno, &mios, &amigo);
+    assert_eq!(p.tix.boletos_de(&amigo), mios);
+    assert_eq!(p.tix.boletos_de(&dueno).len(), 0);
+    assert_eq!(
+        p.tix
+            .try_transferir_varios(&amigo, &Vec::new(&p.env), &dueno),
+        Err(Ok(Error::CantidadInvalida))
+    );
+}
+
+#[test]
+fn registrar_entradas_deja_pasar_al_grupo_una_sola_vez() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let familia = Address::generate(&p.env);
+    let personal = Address::generate(&p.env);
+    let boletos = p.tix.comprar_varios(&familia, &evento, &4);
+    p.tix.autorizar_personal(&evento, &personal);
+
+    p.tix.registrar_entradas(&personal, &boletos);
+    for id in boletos.iter() {
+        assert!(p.tix.consultar_boleto(&id).usado);
+    }
+    // Volver a pasar el mismo grupo se rechaza completo.
+    assert_eq!(
+        p.tix.try_registrar_entradas(&personal, &boletos),
+        Err(Ok(Error::YaUsado))
+    );
+    // Personal sin permiso en el evento no registra a nadie.
+    let colado = Address::generate(&p.env);
+    let otros = p
+        .tix
+        .comprar_varios(&Address::generate(&p.env), &evento, &2);
+    assert_eq!(
+        p.tix.try_registrar_entradas(&colado, &otros),
+        Err(Ok(Error::NoAutorizado))
+    );
+    assert!(!p.tix.consultar_boleto(&otros.get(0).unwrap()).usado);
 }
 
 // ---------- Actualizar el código ----------

@@ -567,6 +567,23 @@ impl TrustTix {
         mover(&env, boleto_id, &de, &a)
     }
 
+    /// Pasa varios boletos (hasta 10) de una cuenta a otra en una sola
+    /// transacción, por ejemplo los de todo un grupo. Si uno no se puede
+    /// transferir, no se mueve ninguno.
+    pub fn transferir_varios(
+        env: Env,
+        de: Address,
+        boletos: Vec<u32>,
+        a: Address,
+    ) -> Result<(), Error> {
+        de.require_auth();
+        validar_grupo(&boletos)?;
+        for boleto_id in boletos.iter() {
+            mover(&env, boleto_id, &de, &a)?;
+        }
+        Ok(())
+    }
+
     /// Devolución acordada: el dueño entrega su boleto y el organizador le
     /// regresa el precio original. Firman los dos. El boleto queda sin validez
     /// y su lugar vuelve a la venta. Devuelve el monto regresado.
@@ -836,39 +853,18 @@ impl TrustTix {
     /// Marca el boleto como usado. Un segundo intento se rechaza.
     pub fn registrar_entrada(env: Env, boleto_id: u32, personal: Address) -> Result<(), Error> {
         personal.require_auth();
-        let mut boleto = leer_boleto(&env, boleto_id)?;
-        let evento = leer_evento(&env, boleto.evento)?;
-        let autorizado = personal == evento.organizador
-            || env
-                .storage()
-                .persistent()
-                .get::<_, bool>(&Clave::Personal(boleto.evento, personal.clone()))
-                .unwrap_or(false);
-        if !autorizado {
-            return Err(Error::NoAutorizado);
-        }
-        if evento.cancelado {
-            return Err(Error::EventoCancelado);
-        }
-        if boleto.usado {
-            return Err(Error::YaUsado);
-        }
-        if boleto.reembolsado {
-            return Err(Error::YaReembolsado);
-        }
+        entrar(&env, boleto_id, &personal)
+    }
 
-        boleto.usado = true;
-        boleto.usado_en = env.ledger().timestamp();
-        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
-        // Un boleto que ya entró no se puede seguir vendiendo.
-        retirar_reventa(&env, boleto_id);
-
-        Entrada {
-            boleto: boleto_id,
-            evento: boleto.evento,
-            personal,
+    /// Registra la entrada de un grupo (hasta 10 boletos) con una sola firma
+    /// del personal. Cada boleto entra una sola vez: si alguno ya entró o no es
+    /// de un evento donde ese personal está autorizado, no entra ninguno.
+    pub fn registrar_entradas(env: Env, personal: Address, boletos: Vec<u32>) -> Result<(), Error> {
+        personal.require_auth();
+        validar_grupo(&boletos)?;
+        for boleto_id in boletos.iter() {
+            entrar(&env, boleto_id, &personal)?;
         }
-        .publish(&env);
         Ok(())
     }
 
@@ -1066,6 +1062,53 @@ fn mover(env: &Env, boleto_id: u32, de: &Address, a: &Address) -> Result<(), Err
         a: a.clone(),
     }
     .publish(env);
+    Ok(())
+}
+
+/// Marca un boleto como usado si `personal` es el organizador o está
+/// autorizado en su evento.
+fn entrar(env: &Env, boleto_id: u32, personal: &Address) -> Result<(), Error> {
+    let mut boleto = leer_boleto(env, boleto_id)?;
+    let evento = leer_evento(env, boleto.evento)?;
+    let autorizado = *personal == evento.organizador
+        || env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&Clave::Personal(boleto.evento, personal.clone()))
+            .unwrap_or(false);
+    if !autorizado {
+        return Err(Error::NoAutorizado);
+    }
+    if evento.cancelado {
+        return Err(Error::EventoCancelado);
+    }
+    if boleto.usado {
+        return Err(Error::YaUsado);
+    }
+    if boleto.reembolsado {
+        return Err(Error::YaReembolsado);
+    }
+
+    boleto.usado = true;
+    boleto.usado_en = env.ledger().timestamp();
+    guardar(env, &Clave::Boleto(boleto_id), &boleto);
+    // Un boleto que ya entró no se puede seguir vendiendo.
+    retirar_reventa(env, boleto_id);
+
+    Entrada {
+        boleto: boleto_id,
+        evento: boleto.evento,
+        personal: personal.clone(),
+    }
+    .publish(env);
+    Ok(())
+}
+
+/// Un grupo lleva de 1 a 10 boletos.
+fn validar_grupo(boletos: &Vec<u32>) -> Result<(), Error> {
+    if boletos.is_empty() || boletos.len() > LIMITE_POR_CUENTA {
+        return Err(Error::CantidadInvalida);
+    }
     Ok(())
 }
 
