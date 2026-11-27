@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
-import { tieneBilleteraPropia } from '../stellar/billetera'
+import { billeteraIntegradaDisponible, tieneBilleteraPropia } from '../stellar/billetera'
+import { NOMBRE_RED } from '../stellar/config'
 import { IconoBilletera, IconoExterno } from './Iconos'
 
 // Las dos formas de conectar: la billetera TrustTix (integrada, recomendada) o
@@ -34,6 +35,8 @@ export default function ElegirBilletera({ alConectar, antesDeExterna, alFallar }
 
   return (
     <div className="elegir-billetera">
+      {billeteraIntegradaDisponible && (
+        <>
       <button
         type="button"
         className="opcion-billetera opcion-billetera--principal"
@@ -56,14 +59,21 @@ export default function ElegirBilletera({ alConectar, antesDeExterna, alFallar }
           <Link to="/login" state={{ desde: pathname }}>Inicia sesión</Link> para usar la billetera TrustTix.
         </p>
       )}
+        </>
+      )}
 
       <button type="button" className="opcion-billetera" onClick={() => conectar('externa')} disabled={Boolean(ocupado)}>
         <IconoExterno width={22} height={22} />
         <span>
-          <strong>{ocupado === 'externa' ? 'Esperando a tu billetera…' : 'Otra billetera'}</strong>
-          <small>Varial (antes Freighter), xBull, Albedo, LOBSTR, Hana, Rabet y más. Debe estar en Testnet.</small>
+          <strong>
+            {ocupado === 'externa' ? 'Esperando a tu billetera…' : billeteraIntegradaDisponible ? 'Otra billetera' : 'Tu billetera de Stellar'}
+          </strong>
+          <small>Varial (antes Freighter), xBull, Albedo, LOBSTR, Hana, Rabet y más. Debe estar en {NOMBRE_RED}.</small>
         </span>
       </button>
+      {!billeteraIntegradaDisponible && (
+        <p className="nota">En Mainnet se paga con XLM real, así que solo se usan billeteras propias: TrustTix nunca guarda tus llaves.</p>
+      )}
 
       {error && <p className="alerta alerta--error" role="alert">{error}</p>}
     </div>

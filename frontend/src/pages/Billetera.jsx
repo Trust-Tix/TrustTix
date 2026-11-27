@@ -7,7 +7,7 @@ import { IconoExterno } from '../components/Iconos'
 import { billeteraEnCuenta, claveSecretaPropia } from '../stellar/billetera'
 import { MEMO_MAXIMO, activarConFriendbot, bytesMemo, enviarXLM, movimientos } from '../stellar/cuenta'
 import EscanerCuenta from '../components/EscanerCuenta'
-import { enlaceCuenta, enlaceTx } from '../stellar/config'
+import { ES_MAINNET, enlaceCuenta, enlaceTx } from '../stellar/config'
 import { abreviar, fechaHora } from '../utils/formato'
 
 const formatoXLM = (texto) => Number(texto).toLocaleString('es-MX', { maximumFractionDigits: 2 })
@@ -95,12 +95,14 @@ export default function Billetera() {
       <>
         <Encabezado titulo="Billetera" billetera={false} />
         <p className="introduccion">
-          Con tu billetera compras boletos y los compartes. Por ahora todo funciona con saldo de prueba, sin dinero real.
+          {ES_MAINNET
+            ? 'Con tu billetera compras boletos y los compartes. En Mainnet se paga con XLM real desde tu propia billetera.'
+            : 'Con tu billetera compras boletos y los compartes. Por ahora todo funciona con saldo de prueba, sin dinero real.'}
         </p>
         <section className="tarjeta">
           <ElegirBilletera />
         </section>
-        {usuario && (
+        {usuario && !ES_MAINNET && (
           <section className="tarjeta">
             <button type="button" className="enlace" onClick={() => setImportando((i) => ({ ...i, abierto: !i.abierto }))}>
               ¿Ya tienes una billetera TrustTix en otro dispositivo?
@@ -135,14 +137,14 @@ export default function Billetera() {
       <section className="tarjeta saldo">
         <div className="saldo__cabecera">
           <span className="etiqueta-categoria">{infoBilletera?.nombre ?? 'Billetera'}</span>
-          <span className="estado-red">Modo de prueba</span>
+          <span className="estado-red">{ES_MAINNET ? 'Mainnet, XLM real' : 'Modo de prueba'}</span>
         </div>
         <p className="saldo__monto">
           {saldo === undefined ? '…' : saldo === null ? 'Sin activar' : `${formatoXLM(saldo)} XLM`}
         </p>
         <p className="nota mono" title={billetera}>{abreviar(billetera)}</p>
         <div className="saldo__acciones">
-          {saldo === null && (
+          {saldo === null && !ES_MAINNET && (
             <button type="button" className="boton boton--claro" onClick={activar} disabled={activando}>
               {activando ? 'Activando…' : 'Recibir saldo de prueba'}
             </button>
@@ -153,7 +155,11 @@ export default function Billetera() {
           </a>
         </div>
         {saldo === null && (
-          <p className="nota">Tu billetera todavía no tiene saldo. Te damos 10,000 XLM de prueba para que empieces.</p>
+          <p className="nota">
+            {ES_MAINNET
+              ? 'Tu billetera todavía no existe en Mainnet: se activa cuando recibe al menos 1 XLM (por ejemplo, desde un exchange).'
+              : 'Tu billetera todavía no tiene saldo. Te damos 10,000 XLM de prueba para que empieces.'}
+          </p>
         )}
         {error && <p className="alerta alerta--error">{error}</p>}
       </section>

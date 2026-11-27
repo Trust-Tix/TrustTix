@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext'
 import Logo from './Logo'
 import BotonBilletera from './BotonBilletera'
 import { IconoAtras } from './Iconos'
+import { ES_MAINNET } from '../stellar/config'
 
 // Encabezado de cada pantalla: logo (o flecha de regreso), título y billetera.
 // Sin sesión, en lugar de la billetera aparece la invitación a entrar.
@@ -21,7 +22,9 @@ export default function Encabezado({ titulo, atras = false, billetera = true, po
         <Logo size={44} className="encabezado__logo" />
       )}
       <h1 className="encabezado__titulo">{titulo}</h1>
-      {billetera && (usuario ? <BotonBilletera /> : <Link to="/login" state={{ desde: pathname }} className="billetera">Entrar</Link>)}
+      {/* En el celular no se ve la barra con la marca: aquí se avisa que es dinero real. */}
+      {ES_MAINNET && <strong className="insignia-red insignia-red--real encabezado__red">Mainnet</strong>}
+      {billetera &&(usuario ? <BotonBilletera /> : <Link to="/login" state={{ desde: pathname }} className="billetera">Entrar</Link>)}
     </header>
   )
 }

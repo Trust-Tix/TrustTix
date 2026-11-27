@@ -4,7 +4,7 @@ import Encabezado from '../components/Encabezado'
 import BotonBilletera from '../components/BotonBilletera'
 import CodigoCuenta from '../components/CodigoCuenta'
 import { IconoAyuda, IconoBilletera, IconoCalendario, IconoEscaner, IconoEscudo, IconoExterno, IconoInicio } from '../components/Iconos'
-import { enlaceContrato } from '../stellar/config'
+import { ES_MAINNET, NOMBRE_RED, enlaceContrato } from '../stellar/config'
 import { abreviar } from '../utils/formato'
 import { PORTAL, urlPortal } from '../portal'
 
@@ -85,7 +85,7 @@ export default function Perfil() {
             <span><strong>Verificar un boleto</strong><small>Consulta en la red quién es el dueño antes de comprar en reventa</small></span>
           </Link>
         )}
-        {PORTAL === 'app' && (
+        {PORTAL === 'app' && !ES_MAINNET && (
           <Link to="/canjear" className="menu__opcion">
             <IconoBilletera />
             <span><strong>Canjear un código</strong><small>Recibe XLM de prueba en tu billetera con un código promocional</small></span>
@@ -105,7 +105,7 @@ export default function Perfil() {
         ))}
         <a href={enlaceContrato()} target="_blank" rel="noreferrer" className="menu__opcion">
           <IconoExterno />
-          <span><strong>Contrato TrustTix</strong><small>Ver el contrato y sus transacciones en Testnet</small></span>
+          <span><strong>Contrato TrustTix</strong><small>Ver el contrato y sus transacciones en {NOMBRE_RED}</small></span>
         </a>
       </section>
 

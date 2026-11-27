@@ -4,6 +4,7 @@ import Logo from './Logo'
 import BotonBilletera from './BotonBilletera'
 import { IconoBilletera, IconoBoleto, IconoCalendario, IconoEscaner, IconoEscudo, IconoInicio, IconoMas, IconoPerfil, IconoUbicacion } from './Iconos'
 import { NOMBRE_PORTAL, PORTAL } from '../portal'
+import { ES_MAINNET, NOMBRE_RED } from '../stellar/config'
 
 // `escritorio`: solo en la barra superior; en celular se llega desde Perfil.
 const ENLACES = {
@@ -47,6 +48,10 @@ export default function Navegacion() {
           TrustTix
           {!tienda && <small>{NOMBRE_PORTAL[PORTAL]}</small>}
         </span>
+        {/* Aviso de la red: que nadie confunda dinero de prueba con real. */}
+        <strong className={`insignia-red ${ES_MAINNET ? 'insignia-red--real' : ''}`} title={ES_MAINNET ? 'Pagos con XLM real' : 'Red de prueba, sin dinero real'}>
+          {NOMBRE_RED}
+        </strong>
       </Link>
       {enlaces.map(({ a, texto, Icono, exacto, escritorio }) => (
         <NavLink

@@ -1,7 +1,7 @@
 import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk'
 import { StellarWalletsKit, SwkAppDarkTheme } from '@creit.tech/stellar-wallets-kit'
 import { defaultModules } from '@creit.tech/stellar-wallets-kit/modules/utils'
-import { RED } from './config'
+import { ES_MAINNET, NOMBRE_RED, RED } from './config'
 import { guardarBilleteraEnCuenta, haySesion, leerBilleteraDeCuenta, supabaseListo } from '../supabase'
 
 // Módulo de billeteras. Hay dos tipos:
@@ -72,7 +72,13 @@ function activarPropia(secreta, enCuenta = false) {
 //   1. La de la cuenta, si ya hay una (gana sobre la de este navegador).
 //   2. La de este navegador, que además se sube a la cuenta.
 //   3. Una nueva, guardada en los dos lugares.
+// En Mainnet la billetera integrada no existe: guarda su llave en la base de
+// datos y en el navegador, y eso no es seguro con dinero real.
+export const billeteraIntegradaDisponible = !ES_MAINNET
+const SOLO_EXTERNAS = 'En Mainnet usa tu propia billetera de Stellar (Freighter, xBull, LOBSTR y otras).'
+
 export async function usarBilleteraPropia(usuarioId) {
+  if (ES_MAINNET) throw new Error(SOLO_EXTERNAS)
   if (!usuarioId) throw new Error('Inicia sesión con Google para usar la billetera TrustTix.')
   const conCuenta = supabaseListo && (await haySesion())
   const remota = conCuenta ? await leerBilleteraDeCuenta().catch(() => undefined) : undefined
@@ -103,6 +109,7 @@ export async function usarBilleteraPropia(usuarioId) {
 // Usa una billetera creada en otro lugar (con su clave secreta). Con sesión,
 // pasa a ser la billetera de la cuenta en todos los dispositivos.
 export async function importarBilleteraPropia(usuarioId, secreta) {
+  if (ES_MAINNET) throw new Error(SOLO_EXTERNAS)
   const limpia = secreta.trim()
   let par
   try {
@@ -136,10 +143,10 @@ async function revisarRedExterna() {
   try {
     red = await kit().getNetwork()
   } catch {
-    return // Algunas billeteras no informan su red; la transacción ya va firmada para Testnet.
+    return // Algunas billeteras no informan su red; la transacción ya va firmada para la red correcta.
   }
   if (red?.networkPassphrase && red.networkPassphrase !== RED) {
-    throw new Error('Tu billetera no está en Testnet. Cámbiala a Testnet en su configuración y vuelve a conectar.')
+    throw new Error(`Tu billetera no está en ${NOMBRE_RED}. Cámbiala a ${NOMBRE_RED} en su configuración y vuelve a conectar.`)
   }
 }
 
@@ -173,7 +180,7 @@ export async function reconectar(usuarioId) {
       return describir(activa)
     }
     const ultima = leer(CLAVE_ACTIVA)
-    if (ultima?.tipo === 'trusttix' && ultima.usuarioId === usuarioId) {
+    if (ultima?.tipo === 'trusttix' && ultima.usuarioId === usuarioId && !ES_MAINNET) {
       // Pasa por la cuenta: si en otro dispositivo se importó otra clave, esa manda.
       return describir(await usarBilleteraPropia(usuarioId))
     }

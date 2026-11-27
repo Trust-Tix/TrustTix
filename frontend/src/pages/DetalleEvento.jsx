@@ -8,7 +8,7 @@ import Modal from '../components/Modal'
 import Reventas from '../components/Reventas'
 import { IconoCalendario, IconoEscudo, IconoUbicacion } from '../components/Iconos'
 import { abreviar, diaMes, fechaLarga, numero, precio } from '../utils/formato'
-import { enlaceCuenta } from '../stellar/config'
+import { ES_MAINNET, enlaceCuenta } from '../stellar/config'
 import { patrocinioActivo } from '../stellar/contrato'
 import useUbicacion from '../hooks/useUbicacion'
 import useCoordenadas from '../hooks/useCoordenadas'
@@ -191,7 +191,7 @@ export default function DetalleEvento() {
             <div className="precio precio--grande">
               {precio(evento.precio)}
               {evento.precio > 0n && (
-                <span className="precio__usdc">{sinComisiones ? 'Precio final, sin comisiones' : 'Saldo de prueba, sin dinero real'}</span>
+                <span className="precio__usdc">{sinComisiones ? 'Precio final, sin comisiones' : ES_MAINNET ? 'Pago en XLM real' : 'Saldo de prueba, sin dinero real'}</span>
               )}
             </div>
             {accion}

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { portadaGenerica } from '../data/eventos'
 import * as red from '../stellar/contrato'
 import {
+  billeteraIntegradaDisponible,
   conectarExterna,
   desconectar,
   eligioOtraBilletera,
@@ -242,7 +243,7 @@ export function AppProvider({ children }) {
     reconectar(usuarioId).then((b) => {
       if (!vigente) return
       if (b) ponerBilletera(b)
-      else if (usuarioId && !eligioOtraBilletera()) conectarBilletera('trusttix').catch(() => {})
+      else if (usuarioId && !eligioOtraBilletera() && billeteraIntegradaDisponible) conectarBilletera('trusttix').catch(() => {})
     })
     return () => {
       vigente = false
@@ -252,7 +253,11 @@ export function AppProvider({ children }) {
   }, [usuarioId, ponerBilletera])
 
   // Billetera lista para firmar y con saldo: la conectada, o la TrustTix si no hay.
+  // En Mainnet no hay billetera integrada: hay que conectar una propia antes.
   const prepararBilletera = useCallback(async () => {
+    if (!billetera && !billeteraIntegradaDisponible) {
+      throw new Error('Conecta tu billetera de Stellar (Freighter, xBull, LOBSTR y otras) para continuar.')
+    }
     const cuenta = billetera ?? (await conectarBilletera('trusttix'))
     if (saldo == null && (await recargarSaldo(cuenta)) === null) {
       await activarConFriendbot(cuenta)
