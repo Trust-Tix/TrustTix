@@ -65,6 +65,7 @@ pub enum Error {
     NoHayOferta = 19,
     VentasPausadas = 20,
     YaHayVentas = 21,
+    SinPropuesta = 22,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -124,6 +125,10 @@ enum Clave {
     Oferta(u32, Address),
     /// El organizador detuvo la venta y la reventa del evento.
     Pausa(u32),
+    /// Cuenta a la que el organizador propone pasar su evento.
+    OrganizadorPropuesto(u32),
+    /// Cuenta a la que el administrador propone pasar la administración.
+    AdminPropuesto,
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -180,6 +185,20 @@ pub struct OfertaHecha {
     pub boleto: u32,
     pub comprador: Address,
     pub precio: i128,
+}
+
+#[contractevent]
+pub struct OrganizadorCambiado {
+    #[topic]
+    pub evento: u32,
+    pub anterior: Address,
+    pub nuevo: Address,
+}
+
+#[contractevent]
+pub struct AdminCambiado {
+    pub anterior: Address,
+    pub nuevo: Address,
 }
 
 #[contractevent]
@@ -322,6 +341,30 @@ impl TrustTix {
         Ok(())
     }
 
+    /// Primer paso para cambiar la cuenta administradora: el admin actual
+    /// propone la nueva. No cambia nada hasta que la nueva acepta, así un
+    /// error al escribir la dirección no deja el contrato sin admin.
+    pub fn proponer_admin(env: Env, nuevo: Address) {
+        admin(&env).require_auth();
+        env.storage().instance().set(&Clave::AdminPropuesto, &nuevo);
+    }
+
+    /// Segundo paso: la cuenta propuesta acepta y pasa a ser la administradora
+    /// (recibe las comisiones desde ese momento).
+    pub fn aceptar_admin(env: Env) -> Result<(), Error> {
+        let nuevo: Address = env
+            .storage()
+            .instance()
+            .get(&Clave::AdminPropuesto)
+            .ok_or(Error::SinPropuesta)?;
+        nuevo.require_auth();
+        let anterior = admin(&env);
+        env.storage().instance().set(&Clave::Admin, &nuevo);
+        env.storage().instance().remove(&Clave::AdminPropuesto);
+        AdminCambiado { anterior, nuevo }.publish(&env);
+        Ok(())
+    }
+
     /// Cambia el código del contrato por uno ya subido a la red, sin perder
     /// eventos, boletos ni saldos. Solo el administrador.
     pub fn actualizar(env: Env, wasm: BytesN<32>) {
@@ -459,6 +502,45 @@ impl TrustTix {
         PrecioCambiado {
             evento: evento_id,
             precio,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Primer paso para pasar un evento a otra cuenta (por ejemplo, de la
+    /// productora al recinto): el organizador actual la propone.
+    pub fn proponer_organizador(env: Env, evento_id: u32, nuevo: Address) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if nuevo == evento.organizador {
+            return Err(Error::MismoDueno);
+        }
+        guardar(&env, &Clave::OrganizadorPropuesto(evento_id), &nuevo);
+        Ok(())
+    }
+
+    /// Segundo paso: la cuenta propuesta acepta y desde ese momento cobra las
+    /// ventas, autoriza personal y administra el evento.
+    pub fn aceptar_organizador(env: Env, evento_id: u32) -> Result<(), Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        let clave = Clave::OrganizadorPropuesto(evento_id);
+        let nuevo: Address = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::SinPropuesta)?;
+        nuevo.require_auth();
+        let anterior = evento.organizador.clone();
+        evento.organizador = nuevo.clone();
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        env.storage().persistent().remove(&clave);
+        OrganizadorCambiado {
+            evento: evento_id,
+            anterior,
+            nuevo,
         }
         .publish(&env);
         Ok(())

@@ -901,6 +901,59 @@ fn el_precio_solo_cambia_antes_de_la_primera_venta() {
     );
 }
 
+// ---------- Cambios en dos pasos ----------
+
+#[test]
+fn el_evento_pasa_a_otra_cuenta_solo_cuando_la_nueva_acepta() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let recinto = Address::generate(&p.env);
+
+    assert_eq!(
+        p.tix.try_aceptar_organizador(&evento),
+        Err(Ok(Error::SinPropuesta))
+    );
+    p.tix.proponer_organizador(&evento, &recinto);
+    // Mientras no acepte, el organizador sigue siendo el mismo.
+    assert_eq!(p.tix.consultar_evento(&evento).organizador, p.organizador);
+
+    p.tix.aceptar_organizador(&evento);
+    assert_eq!(p.env.auths()[0].0, recinto);
+    assert_eq!(p.tix.consultar_evento(&evento).organizador, recinto);
+
+    // Desde ahí las ventas le pagan al nuevo organizador.
+    let fan = con_saldo(&p, PRECIO);
+    p.tix.comprar(&fan, &evento);
+    assert_eq!(p.token.balance(&recinto), PRECIO - 7_500_000);
+    assert_eq!(p.token.balance(&p.organizador), 0);
+    assert_eq!(
+        p.tix.try_proponer_organizador(&evento, &recinto),
+        Err(Ok(Error::MismoDueno))
+    );
+}
+
+#[test]
+fn el_admin_cambia_en_dos_pasos_y_las_comisiones_siguen_al_nuevo() {
+    let p = preparar();
+    let nuevo = Address::generate(&p.env);
+    assert_eq!(p.tix.try_aceptar_admin(), Err(Ok(Error::SinPropuesta)));
+
+    p.tix.proponer_admin(&nuevo);
+    assert_eq!(p.env.auths()[0].0, p.admin);
+    assert_eq!(p.tix.admin(), p.admin);
+
+    p.tix.aceptar_admin();
+    assert_eq!(p.env.auths()[0].0, nuevo);
+    assert_eq!(p.tix.admin(), nuevo);
+    assert_eq!(p.tix.try_aceptar_admin(), Err(Ok(Error::SinPropuesta)));
+
+    let evento = crear(&p, 5, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    p.tix.comprar(&fan, &evento);
+    assert_eq!(p.token.balance(&nuevo), 7_500_000);
+    assert_eq!(p.token.balance(&p.admin), 0);
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
