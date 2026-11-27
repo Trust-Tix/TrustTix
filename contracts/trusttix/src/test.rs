@@ -3,7 +3,7 @@
 use super::*;
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
-use soroban_sdk::{Address, Env, String};
+use soroban_sdk::{Address, Bytes, Env, String};
 
 const PRECIO: i128 = 250_000_000; // 25 XLM
 /// Comisiones de TrustTix en puntos base: 3 % por compra y 2 % por reventa.
@@ -604,6 +604,77 @@ fn comprar_para_regala_el_boleto_y_cobra_a_quien_paga() {
         p.tix.try_comprar_para(&amiga, &amiga, &evento),
         Err(Ok(Error::MismoDueno))
     );
+}
+
+// ---------- Reembolso por lote ----------
+
+#[test]
+fn reembolsar_lote_devuelve_el_precio_de_todo_el_evento() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let otro = crear(&p, 10, PRECIO);
+    let a = con_saldo(&p, PRECIO * 2);
+    let b = con_saldo(&p, PRECIO);
+    let ajeno = con_saldo(&p, PRECIO);
+    p.tix.comprar_varios(&a, &evento, &2); // boletos 1 y 2
+    p.tix.comprar(&ajeno, &otro); // boleto 3, de otro evento
+    let ultimo = p.tix.comprar(&b, &evento); // boleto 4
+    p.tix.registrar_entrada(&ultimo, &p.organizador);
+    p.tix.cancelar_evento(&evento);
+    // El organizador recibió el 97 %; pone la diferencia para devolver el 100 %.
+    StellarAssetClient::new(&p.env, &p.token.address).mint(&p.organizador, &PRECIO);
+
+    assert_eq!(
+        p.tix.try_reembolsar_lote(&otro, &1, &4),
+        Err(Ok(Error::EventoActivo))
+    );
+    let reembolsados = p.tix.reembolsar_lote(&evento, &1, &4);
+
+    // Se reembolsan 1 y 2; el 3 es de otro evento y el 4 ya entró.
+    assert_eq!(reembolsados, 2);
+    assert_eq!(p.token.balance(&a), PRECIO * 2);
+    assert!(p.tix.consultar_boleto(&1).reembolsado);
+    assert!(!p.tix.consultar_boleto(&3).reembolsado);
+    assert!(!p.tix.consultar_boleto(&4).reembolsado);
+    // Una segunda pasada ya no reembolsa nada.
+    assert_eq!(p.tix.reembolsar_lote(&evento, &1, &4), 0);
+}
+
+#[test]
+fn reembolsar_lote_acepta_hasta_diez_boletos() {
+    let p = preparar();
+    let evento = crear(&p, 5, 0);
+    p.tix.cancelar_evento(&evento);
+    assert_eq!(p.tix.try_reembolsar_lote(&evento, &1, &10), Ok(Ok(0)));
+    for (desde, hasta) in [(1, 11), (0, 5), (5, 4)] {
+        assert_eq!(
+            p.tix.try_reembolsar_lote(&evento, &desde, &hasta),
+            Err(Ok(Error::CantidadInvalida))
+        );
+    }
+}
+
+// ---------- Actualizar el código ----------
+
+#[test]
+fn el_admin_actualiza_el_codigo_sin_perder_los_datos() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let fan = con_saldo(&p, PRECIO);
+    let boleto = p.tix.comprar(&fan, &evento);
+
+    // Una versión anterior del contrato, ya compilada, como código nuevo.
+    let wasm = p.env.deployer().upload_contract_wasm(Bytes::from_slice(
+        &p.env,
+        include_bytes!("../testdata/trusttix-v2.wasm"),
+    ));
+    p.tix.actualizar(&wasm);
+    assert_eq!(p.env.auths()[0].0, p.admin);
+
+    // Los datos siguen ahí y los lee el código nuevo.
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 1);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, fan);
+    assert_eq!(p.tix.admin(), p.admin);
 }
 
 #[test]

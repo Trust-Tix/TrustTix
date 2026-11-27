@@ -14,7 +14,7 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error, token,
-    Address, Env, String, Vec,
+    Address, BytesN, ContractExecutable, Env, String, Vec,
 };
 
 /// Ledgers aproximados en un día (un ledger cada ~5 segundos).
@@ -35,6 +35,10 @@ const TOPE_REVENTA_MINIMO: u32 = 10_000;
 const TOPE_REVENTA_MAXIMO: u32 = 15_000;
 /// Boletos que una cuenta puede comprar por evento, sumando todas sus compras.
 const LIMITE_POR_CUENTA: u32 = 10;
+/// Boletos que se reembolsan como máximo en una sola transacción. Cada uno
+/// escribe el boleto y el saldo de su dueño, y la red limita cuántos registros
+/// cambia una transacción.
+const LOTE_MAXIMO: u32 = 10;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -156,6 +160,11 @@ pub struct Regalo {
 }
 
 #[contractevent]
+pub struct Actualizacion {
+    pub wasm: BytesN<32>,
+}
+
+#[contractevent]
 pub struct ReventaPublicada {
     #[topic]
     pub boleto: u32,
@@ -259,6 +268,15 @@ impl TrustTix {
             .set(&Clave::Comisiones, &Comisiones { compra, reventa });
         ComisionesActualizadas { compra, reventa }.publish(&env);
         Ok(())
+    }
+
+    /// Cambia el código del contrato por uno ya subido a la red, sin perder
+    /// eventos, boletos ni saldos. Solo el administrador.
+    pub fn actualizar(env: Env, wasm: BytesN<32>) {
+        admin(&env).require_auth();
+        env.deployer()
+            .update_current_contract(ContractExecutable::Wasm(wasm.clone()));
+        Actualizacion { wasm }.publish(&env);
     }
 
     // ---------- Organizador ----------
@@ -368,26 +386,34 @@ impl TrustTix {
         if boleto.usado {
             return Err(Error::YaUsado);
         }
-
-        if evento.precio > 0 {
-            token::Client::new(&env, &token_de_pago(&env)).transfer(
-                &evento.organizador,
-                &boleto.dueno,
-                &evento.precio,
-            );
-        }
-        boleto.reembolsado = true;
-        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
-        retirar_reventa(&env, boleto_id);
-
-        Reembolso {
-            boleto: boleto_id,
-            evento: boleto.evento,
-            dueno: boleto.dueno,
-            monto: evento.precio,
-        }
-        .publish(&env);
+        devolver_precio(&env, &evento, boleto_id, &mut boleto);
         Ok(evento.precio)
+    }
+
+    /// Reembolsa de una vez los boletos de un evento cancelado entre los
+    /// números `desde` y `hasta` (hasta 10 por transacción). Se saltan los de
+    /// otros eventos, los ya reembolsados y los que ya entraron. Devuelve
+    /// cuántos reembolsó.
+    pub fn reembolsar_lote(env: Env, evento_id: u32, desde: u32, hasta: u32) -> Result<u32, Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if !evento.cancelado {
+            return Err(Error::EventoActivo);
+        }
+        if desde == 0 || hasta < desde || hasta - desde >= LOTE_MAXIMO {
+            return Err(Error::CantidadInvalida);
+        }
+
+        let mut reembolsados = 0;
+        for boleto_id in desde..=hasta {
+            if let Ok(mut boleto) = leer_boleto(&env, boleto_id) {
+                if boleto.evento == evento_id && !boleto.usado && !boleto.reembolsado {
+                    devolver_precio(&env, &evento, boleto_id, &mut boleto);
+                    reembolsados += 1;
+                }
+            }
+        }
+        Ok(reembolsados)
     }
 
     /// El organizador retira la autorización de una cuenta.
@@ -832,6 +858,28 @@ fn emitir(env: &Env, evento_id: u32, evento: &mut Evento, dueno: &Address) -> u3
     agregar_a(env, dueno, id);
     evento.vendidos += 1;
     id
+}
+
+/// El organizador devuelve el precio original del boleto a su dueño actual y
+/// el boleto queda reembolsado y fuera de la reventa.
+fn devolver_precio(env: &Env, evento: &Evento, boleto_id: u32, boleto: &mut Boleto) {
+    if evento.precio > 0 {
+        token::Client::new(env, &token_de_pago(env)).transfer(
+            &evento.organizador,
+            &boleto.dueno,
+            &evento.precio,
+        );
+    }
+    boleto.reembolsado = true;
+    guardar(env, &Clave::Boleto(boleto_id), boleto);
+    retirar_reventa(env, boleto_id);
+    Reembolso {
+        boleto: boleto_id,
+        evento: boleto.evento,
+        dueno: boleto.dueno.clone(),
+        monto: evento.precio,
+    }
+    .publish(env);
 }
 
 /// Precio más alto al que se puede revender un boleto del evento.
