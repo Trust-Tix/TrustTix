@@ -1,0 +1,6 @@
+CBEPJEJDV2C7HV3PO7V7Z4P5XIADQCXFES2Q2P6DGDVB3LKS2QSPXSJ5
+# Contrato TrustTix en Mainnet: https://stellar.expert/explorer/public/contract/CBEPJEJDV2C7HV3PO7V7Z4P5XIADQCXFES2Q2P6DGDVB3LKS2QSPXSJ5
+# Código (contracts/trusttix-mainnet): 3ee54ddd361bb7752dd325ee1c5e9952112b028cdfcbdd630b48ef694ce71722
+# Subida del código: https://stellar.expert/explorer/public/tx/a8736c15fc24024cb782338e26625fa4de29168bea5e1daa78c5073d14645886
+# Creación del contrato: https://stellar.expert/explorer/public/tx/0b6cd66ae60528b53b37581a9765276e50844050af4d63011101323639a25199
+# Admin: GDZQCMAUZHQ4AONFEIFAKCCID7JEB4FUIZ2LMRUHJ2UZUGLIX2NYQTK4. Comisiones: 300 pb compra, 200 pb reventa.
