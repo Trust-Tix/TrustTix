@@ -4,6 +4,49 @@
 
 Boletos de eventos que no se pueden falsificar ni revender abusivamente. Cada boleto queda a nombre de su dueño en un contrato de Stellar: el pago y el boleto van en la misma transacción, cada boleto entra una sola vez y la reventa tiene un precio tope. Las reglas de dinero están en [docs/reglas-de-negocio.md](docs/reglas-de-negocio.md) y los casos para probar la app en [docs/casos-de-prueba.md](docs/casos-de-prueba.md).
 
+## Pruébalo (demo)
+
+| Dónde | Red | Para qué |
+| --- | --- | --- |
+| **https://mainnet.trusttix.xyz** | Mainnet, XLM real | La app con dinero real: se paga con tu propia billetera (Freighter, xBull, LOBSTR). Detalles en [docs/mainnet.md](docs/mainnet.md). |
+| **https://app.trusttix.xyz** | Testnet, sin dinero real | Para probar todo gratis: entras con Google y la app te crea una billetera con XLM de prueba. |
+| https://organizer.trusttix.xyz | Testnet | Portal de organizadores: crear eventos, ver ventas y autorizar personal. |
+| https://staff.trusttix.xyz | Testnet | Portal del personal de acceso: escáner de QR en la puerta. |
+| https://app.trusttix.xyz/verificar | Testnet | Verificar un boleto antes de comprarlo en reventa, sin cuenta. |
+
+## Qué resuelve
+
+En México los boletos falsos, la doble venta y la reventa al triple son comunes, y quien compra no tiene cómo comprobar nada antes de pagar. TrustTix pone cada boleto en un registro público de Stellar:
+
+- **No hay boletos falsos ni duplicados:** cada boleto tiene un solo dueño y cualquiera puede verificarlo.
+- **Reventa justa:** el organizador fija un precio tope (110 % por defecto) y la reventa se hace dentro de la app, con pago y cambio de dueño en la misma transacción.
+- **Cada boleto entra una sola vez:** el personal autorizado lo registra en la puerta y un segundo intento se rechaza.
+- **Si el evento se cancela, se reembolsa:** el organizador devuelve el precio original a cada dueño.
+
+## Cómo se usa
+
+**Si compras:**
+
+1. Abre la tienda, elige un evento y toca **Comprar boleto**. En Testnet entras con Google; en Mainnet conectas tu billetera.
+2. Paga. El boleto queda a tu nombre en la red y aparece en **Mis boletos** con su QR.
+3. En la entrada, muestra el QR. Si ya no puedes ir, en **Tu boleto** tocas **Revender** (hasta el tope) o **Transferir** para regalarlo.
+4. Antes de comprarle a alguien por fuera, revisa el número del boleto en **Verificar**.
+
+**Si organizas:** en el portal de organizadores creas el evento (nombre, recinto, fecha, capacidad y precio), ves lo vendido y autorizas al personal de la puerta escaneando su código.
+
+**En la puerta:** el personal abre el escáner, que se queda encendido y registra un boleto tras otro.
+
+## Qué corre en Stellar
+
+| Contrato | Red | Qué hace |
+| --- | --- | --- |
+| [`CBEPJEJD…SPXSJ5`](https://stellar.expert/explorer/public/contract/CBEPJEJDV2C7HV3PO7V7Z4P5XIADQCXFES2Q2P6DGDVB3LKS2QSPXSJ5) ([`contracts/trusttix-mainnet`](contracts/trusttix-mainnet)) | Mainnet | Compra con comisión, reventa con tope, transferencias, entradas, cancelación y reembolso, y `actualizar`. |
+| [`CDKVPZI5…KKRD4`](https://stellar.expert/explorer/testnet/contract/CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4) | Testnet | El mismo núcleo, el que usa app.trusttix.xyz. |
+| [`CCYLLQ6P…IEVG`](https://stellar.expert/explorer/testnet/contract/CCYLLQ6P3XFHIT5QXA2CSE4C4KRGYXFK2ZW4F32N4FNYOU3JCOY2IEVG) ([`contracts/trusttix`](contracts/trusttix)) | Testnet | La versión completa, donde se prueban las funciones nuevas antes de llevarlas a Mainnet: ofertas, apartados, preventa, cortesías, regalía, devoluciones y más. |
+| [`CBPG52EY…XABB`](https://stellar.expert/explorer/testnet/contract/CBPG52EYMUDN53TUPZ4K5RLJU4GGDAZTT6MA7JQQOGU7MYMQJE6PXABB) ([`contracts/boveda`](contracts/boveda)) | Testnet | Bóveda de códigos promocionales, que se canjea en app.trusttix.xyz/canjear. |
+
+La app firma con la billetera de cada persona y habla con los contratos por RPC; las portadas y descripciones de los eventos viven en Supabase. El primer boleto comprado con XLM real desde mainnet.trusttix.xyz: [eacd5791…](https://stellar.expert/explorer/public/tx/eacd5791a3b3226a20c5fc544ba8fa61dcaddde6c450ebe27b50a1dc21337877).
+
 ## Requisitos
 
 **Para el front:**

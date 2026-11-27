@@ -4,9 +4,28 @@
 
 Event tickets that can't be counterfeited or scalped. Every ticket belongs to its owner in a Stellar smart contract: payment and ticket happen in the same transaction, each ticket gets in only once, and resale has a price cap. The money rules are in [docs/reglas-de-negocio.md](docs/reglas-de-negocio.md) and the manual test cases in [docs/casos-de-prueba.md](docs/casos-de-prueba.md) (both in Spanish).
 
-**Live:** <https://trusttix.xyz> (landing), <https://app.trusttix.xyz> (buyers), <https://organizer.trusttix.xyz> (organizers) and <https://staff.trusttix.xyz> (door staff). Everything runs on Stellar **Testnet**: no real money is used.
+## Try it (demo)
 
-**Contract v2 on Testnet:** [`CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4`](https://stellar.expert/explorer/testnet/contract/CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4)
+| Where | Network | What for |
+| --- | --- | --- |
+| **https://mainnet.trusttix.xyz** | Mainnet, real XLM | The app with real money: you pay with your own wallet (Freighter, xBull, LOBSTR). Details in [docs/mainnet.md](docs/mainnet.md) (Spanish). |
+| **https://app.trusttix.xyz** | Testnet, no real money | Try everything for free: sign in with Google and the app creates a wallet with test XLM. |
+| https://organizer.trusttix.xyz | Testnet | Organizer portal: create events, see sales, authorize staff. |
+| https://staff.trusttix.xyz | Testnet | Door staff portal: QR scanner. |
+| https://app.trusttix.xyz/verificar | Testnet | Check a ticket before buying it secondhand, no account needed. |
+
+**How to use it:** open the store, pick an event and tap **Comprar boleto** (buy). The ticket is registered in your name and shows up in **Mis boletos** with its QR. Show the QR at the door; if you can't go, **Revender** (resell, up to the cap) or **Transferir** (gift) it from your ticket. Organizers create events and authorize door staff in their portal; staff scan tickets one after another.
+
+**On Stellar:**
+
+| Contract | Network | What it does |
+| --- | --- | --- |
+| [`CBEPJEJD…SPXSJ5`](https://stellar.expert/explorer/public/contract/CBEPJEJDV2C7HV3PO7V7Z4P5XIADQCXFES2Q2P6DGDVB3LKS2QSPXSJ5) ([`contracts/trusttix-mainnet`](contracts/trusttix-mainnet)) | Mainnet | Purchase with fee, capped resale, transfers, check-in, cancellation and refunds, plus `actualizar` (upgrade). |
+| [`CDKVPZI5…KKRD4`](https://stellar.expert/explorer/testnet/contract/CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4) | Testnet | Same core, used by app.trusttix.xyz. |
+| [`CCYLLQ6P…IEVG`](https://stellar.expert/explorer/testnet/contract/CCYLLQ6P3XFHIT5QXA2CSE4C4KRGYXFK2ZW4F32N4FNYOU3JCOY2IEVG) ([`contracts/trusttix`](contracts/trusttix)) | Testnet | Full version where new functions are tested before Mainnet: offers, layaways, presales, comps, royalties, returns and more. |
+| [`CBPG52EY…XABB`](https://stellar.expert/explorer/testnet/contract/CBPG52EYMUDN53TUPZ4K5RLJU4GGDAZTT6MA7JQQOGU7MYMQJE6PXABB) ([`contracts/boveda`](contracts/boveda)) | Testnet | Promo-code vault, redeemed at app.trusttix.xyz/canjear. |
+
+First ticket bought with real XLM from mainnet.trusttix.xyz: [eacd5791…](https://stellar.expert/explorer/public/tx/eacd5791a3b3226a20c5fc544ba8fa61dcaddde6c450ebe27b50a1dc21337877).
 
 ## What the contract enforces
 

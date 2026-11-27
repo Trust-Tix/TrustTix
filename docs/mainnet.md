@@ -25,13 +25,13 @@ Todas las llamadas al contrato pasan por [`frontend/src/stellar/contrato.js`](..
 
 ## Las 5 funciones que usa el frontend
 
-Cada una tiene una transacción real en Mainnet hecha desde la app.
+Cada una tiene una transacción real en Mainnet hecha desde la app. La primera compra con una billetera personal (Freighter) desde **https://mainnet.trusttix.xyz** fue el boleto TTX-000003: [eacd5791…](https://stellar.expert/explorer/public/tx/eacd5791a3b3226a20c5fc544ba8fa61dcaddde6c450ebe27b50a1dc21337877).
 
 ### 1. `comprar`: comprar un boleto
 
 - **Dónde:** página del evento, botón **Comprar boleto** y **Pagar** en la ventana de confirmación ([`DetalleEvento.jsx`](../frontend/src/pages/DetalleEvento.jsx)).
 - **Cómo:** `comprar` en [`AppContext.jsx`](../frontend/src/context/AppContext.jsx) llama a `red.comprar(cuenta, eventoId)` de `contrato.js`. El contrato cobra el precio, paga el 97 % al organizador y el 3 % a TrustTix, y emite el boleto a nombre de quien paga, en una sola transacción. La app lleva a **Tu boleto** con el QR y el enlace al comprobante.
-- **Transacción:** [8feebb36…](https://stellar.expert/explorer/public/tx/8feebb36a6f45098e2f16a1827de960bdcbe9f4bc799ae6a301ce07fb5d84dba) (boleto TTX-000002 del evento "Lanzamiento de TrustTix en Mainnet", 1 XLM).
+- **Transacciones:** [eacd5791…](https://stellar.expert/explorer/public/tx/eacd5791a3b3226a20c5fc544ba8fa61dcaddde6c450ebe27b50a1dc21337877) (boleto TTX-000003 con Freighter desde mainnet.trusttix.xyz) y [8feebb36…](https://stellar.expert/explorer/public/tx/8feebb36a6f45098e2f16a1827de960bdcbe9f4bc799ae6a301ce07fb5d84dba) (TTX-000002), del evento "Lanzamiento de TrustTix en Mainnet" a 1 XLM.
 
 ### 2. `publicar_reventa`: poner un boleto a la venta con precio tope
 
