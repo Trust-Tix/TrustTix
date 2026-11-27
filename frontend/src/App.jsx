@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useApp } from './context/AppContext'
 import { PORTAL, subdominioViejo, urlPortal } from './portal'
+import { ES_MAINNET } from './stellar/config'
 import Navegacion from './components/Navegacion'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -45,10 +46,12 @@ function Plantilla() {
   )
 }
 
-function ConSesion({ children }) {
+// En Mainnet la billetera es la identidad: comprar y ver boletos no piden
+// Google (`billeteraBasta`). El perfil y los portales sí.
+function ConSesion({ children, billeteraBasta = false }) {
   const { usuario } = useApp()
   const location = useLocation()
-  if (!usuario) return <Navigate to="/login" replace state={{ desde: location.pathname }} />
+  if (!usuario && !(ES_MAINNET && billeteraBasta)) return <Navigate to="/login" replace state={{ desde: location.pathname }} />
   return children
 }
 
@@ -95,10 +98,10 @@ function rutas() {
       <Route path="/verificar" element={<Verificar />} />
       <Route path="/ayuda" element={<Ayuda />} />
       <Route path="/canjear" element={<Canjear />} />
-      <Route path="/boletos" element={<ConSesion><MisBoletos /></ConSesion>} />
-      <Route path="/boletos/:id" element={<ConSesion><DetalleBoleto /></ConSesion>} />
-      <Route path="/boletos/:id/transferir" element={<ConSesion><Transferir /></ConSesion>} />
-      <Route path="/billetera" element={<ConSesion><Billetera /></ConSesion>} />
+      <Route path="/boletos" element={<ConSesion billeteraBasta><MisBoletos /></ConSesion>} />
+      <Route path="/boletos/:id" element={<ConSesion billeteraBasta><DetalleBoleto /></ConSesion>} />
+      <Route path="/boletos/:id/transferir" element={<ConSesion billeteraBasta><Transferir /></ConSesion>} />
+      <Route path="/billetera" element={<ConSesion billeteraBasta><Billetera /></ConSesion>} />
       <Route path="/perfil" element={<ConSesion><Perfil /></ConSesion>} />
     </>
   )

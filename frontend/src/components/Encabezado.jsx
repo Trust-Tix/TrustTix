@@ -24,7 +24,8 @@ export default function Encabezado({ titulo, atras = false, billetera = true, po
       <h1 className="encabezado__titulo">{titulo}</h1>
       {/* En el celular no se ve la barra con la marca: aquí se avisa que es dinero real. */}
       {ES_MAINNET && <strong className="insignia-red insignia-red--real encabezado__red">Mainnet</strong>}
-      {billetera &&(usuario ? <BotonBilletera /> : <Link to="/login" state={{ desde: pathname }} className="billetera">Entrar</Link>)}
+      {billetera &&
+        (usuario || ES_MAINNET ? <BotonBilletera /> : <Link to="/login" state={{ desde: pathname }} className="billetera">Entrar</Link>)}
     </header>
   )
 }

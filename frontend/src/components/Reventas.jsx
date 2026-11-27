@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import Modal from './Modal'
 import { IconoEscudo } from './Iconos'
 import { abreviar, folio, porcentaje, precio } from '../utils/formato'
+import { ES_MAINNET } from '../stellar/config'
 
 // Boletos que sus dueños revenden dentro de TrustTix. Cada uno se compra en una
 // sola transacción: pago al vendedor, comisión y cambio de dueño, o nada.
@@ -55,7 +56,7 @@ export default function Reventas({ evento }) {
               <span className="precio">{precio(o.precio)}</span>
               {mio ? (
                 <Link to={`/boletos/${o.boleto.id}`} className="boton boton--contorno">Ver</Link>
-              ) : usuario ? (
+              ) : usuario || (ES_MAINNET && billetera) ? (
                 <button type="button" className="boton boton--claro" onClick={() => setElegida(o)}>
                   Comprar
                 </button>

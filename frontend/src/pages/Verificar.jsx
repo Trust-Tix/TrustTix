@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 import { useBoleto } from '../hooks/useBoleto'
 import Encabezado from '../components/Encabezado'
 import { IconoBuscar, IconoCheck, IconoExterno, IconoX } from '../components/Iconos'
-import { enlaceContrato, enlaceCuenta } from '../stellar/config'
+import { ES_MAINNET, enlaceContrato, enlaceCuenta } from '../stellar/config'
 import { abreviar, fechaCorta, fechaHora, folio, leerFolio } from '../utils/formato'
 
 const TITULO = { valido: 'Boleto válido', usado: 'Boleto ya utilizado', reembolsado: 'Boleto reembolsado' }
@@ -108,7 +108,7 @@ export default function Verificar() {
       <p className="nota nota--centro">
         ¿Dudas sobre la reventa? <Link to="/ayuda">Lee la ayuda</Link>
       </p>
-      {!usuario && (
+      {!usuario && !ES_MAINNET && (
         <p className="nota nota--centro">
           ¿Quieres comprar boletos? <Link to="/login">Inicia sesión</Link>
         </p>

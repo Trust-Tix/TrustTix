@@ -5,6 +5,7 @@ import Encabezado from '../components/Encabezado'
 import Portada from '../components/Portada'
 import Disponibilidad from '../components/Disponibilidad'
 import Modal from '../components/Modal'
+import BotonBilletera from '../components/BotonBilletera'
 import Reventas from '../components/Reventas'
 import { IconoCalendario, IconoEscudo, IconoUbicacion } from '../components/Iconos'
 import { abreviar, diaMes, fechaLarga, numero, precio } from '../utils/formato'
@@ -81,7 +82,10 @@ export default function DetalleEvento() {
     accion = <span className="boton boton--apagado" aria-disabled="true">Cancelado</span>
   } else if (agotado) {
     accion = <span className="boton boton--apagado" aria-disabled="true">Agotado</span>
-  } else if (!usuario) {
+  } else if (ES_MAINNET && !billetera) {
+    // En Mainnet se compra con la billetera propia, sin cuenta de Google.
+    accion = <BotonBilletera grande />
+  } else if (!usuario && !ES_MAINNET) {
     accion = (
       <Link to="/login" state={{ desde: `/eventos/${evento.id}` }} className="boton boton--claro">
         Inicia sesión para comprar
