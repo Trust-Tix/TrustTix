@@ -63,6 +63,8 @@ pub enum Error {
     LimitePorCuenta = 17,
     CantidadInvalida = 18,
     NoHayOferta = 19,
+    VentasPausadas = 20,
+    YaHayVentas = 21,
 }
 
 /// Comisiones de TrustTix en puntos base: `compra` sobre cada boleto vendido y
@@ -120,6 +122,8 @@ enum Clave {
     Compras(u32, Address),
     /// Dinero en garantía que una cuenta ofrece por un boleto.
     Oferta(u32, Address),
+    /// El organizador detuvo la venta y la reventa del evento.
+    Pausa(u32),
 }
 
 // ---------- Eventos que quedan en el registro público ----------
@@ -175,6 +179,28 @@ pub struct OfertaHecha {
     #[topic]
     pub boleto: u32,
     pub comprador: Address,
+    pub precio: i128,
+}
+
+#[contractevent]
+pub struct Cortesia {
+    #[topic]
+    pub evento: u32,
+    pub boleto: u32,
+    pub para: Address,
+}
+
+#[contractevent]
+pub struct VentasCambiadas {
+    #[topic]
+    pub evento: u32,
+    pub pausadas: bool,
+}
+
+#[contractevent]
+pub struct PrecioCambiado {
+    #[topic]
+    pub evento: u32,
     pub precio: i128,
 }
 
@@ -353,6 +379,94 @@ impl TrustTix {
         evento.organizador.require_auth();
         guardar(&env, &Clave::Personal(evento_id, cuenta), &true);
         Ok(())
+    }
+
+    /// El organizador regala un boleto de cortesía: no se cobra, cuenta dentro
+    /// de la capacidad y queda a nombre de `para`.
+    pub fn emitir_cortesia(env: Env, evento_id: u32, para: Address) -> Result<u32, Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if evento.vendidos >= evento.capacidad {
+            return Err(Error::Agotado);
+        }
+        let id = emitir(&env, evento_id, &mut evento, &para);
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        Cortesia {
+            evento: evento_id,
+            boleto: id,
+            para,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    /// El organizador detiene la venta y la reventa de su evento, por ejemplo
+    /// mientras confirma un cambio de recinto. Los boletos vendidos siguen
+    /// valiendo para entrar.
+    pub fn pausar_ventas(env: Env, evento_id: u32) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if ventas_pausadas(&env, evento_id) {
+            return Err(Error::VentasPausadas);
+        }
+        guardar(&env, &Clave::Pausa(evento_id), &true);
+        VentasCambiadas {
+            evento: evento_id,
+            pausadas: true,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// El organizador reabre la venta y la reventa de su evento.
+    pub fn reanudar_ventas(env: Env, evento_id: u32) -> Result<(), Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if !ventas_pausadas(&env, evento_id) {
+            return Err(Error::CantidadInvalida);
+        }
+        env.storage().persistent().remove(&Clave::Pausa(evento_id));
+        VentasCambiadas {
+            evento: evento_id,
+            pausadas: false,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// El organizador corrige el precio de su evento, solo antes de la primera
+    /// venta: a nadie se le cambia lo que ya pagó.
+    pub fn cambiar_precio(env: Env, evento_id: u32, precio: i128) -> Result<(), Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if evento.vendidos > 0 {
+            return Err(Error::YaHayVentas);
+        }
+        if precio < 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        evento.precio = precio;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        PrecioCambiado {
+            evento: evento_id,
+            precio,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// ¿El organizador tiene detenidas las ventas del evento?
+    pub fn ventas_pausadas(env: Env, evento_id: u32) -> bool {
+        ventas_pausadas(&env, evento_id)
     }
 
     /// El organizador fija el precio máximo de reventa de su evento, en puntos
@@ -684,6 +798,9 @@ impl TrustTix {
         if evento.cancelado {
             return Err(Error::EventoCancelado);
         }
+        if ventas_pausadas(&env, boleto.evento) {
+            return Err(Error::VentasPausadas);
+        }
         if precio > precio_maximo(&evento) {
             return Err(Error::SobreTope);
         }
@@ -811,6 +928,9 @@ impl TrustTix {
         let evento = leer_evento(&env, boleto.evento)?;
         if evento.cancelado {
             return Err(Error::EventoCancelado);
+        }
+        if ventas_pausadas(&env, boleto.evento) {
+            return Err(Error::VentasPausadas);
         }
         // Si el organizador bajó el tope después de publicarse, la oferta ya no vale.
         if precio > precio_maximo(&evento) {
@@ -968,6 +1088,10 @@ fn cobrar(env: &Env, de: &Address, para: &Address, precio: i128, puntos: u32) ->
     comision
 }
 
+fn ventas_pausadas(env: &Env, evento_id: u32) -> bool {
+    env.storage().persistent().has(&Clave::Pausa(evento_id))
+}
+
 /// Revisa que `comprador` pueda pagar `cantidad` boletos más del evento: que no
 /// esté cancelado, que queden lugares y que no pase del límite por cuenta.
 /// Deja anotadas sus compras y devuelve el evento para emitir los boletos.
@@ -980,6 +1104,9 @@ fn preparar_compra(
     let evento = leer_evento(env, evento_id)?;
     if evento.cancelado {
         return Err(Error::EventoCancelado);
+    }
+    if ventas_pausadas(env, evento_id) {
+        return Err(Error::VentasPausadas);
     }
     if evento.vendidos + cantidad > evento.capacidad {
         return Err(Error::Agotado);

@@ -827,6 +827,80 @@ fn registrar_entradas_deja_pasar_al_grupo_una_sola_vez() {
     assert!(!p.tix.consultar_boleto(&otros.get(0).unwrap()).usado);
 }
 
+// ---------- Herramientas del organizador ----------
+
+#[test]
+fn emitir_cortesia_regala_un_boleto_dentro_de_la_capacidad() {
+    let p = preparar();
+    let evento = crear(&p, 2, PRECIO);
+    let invitado = Address::generate(&p.env);
+
+    let boleto = p.tix.emitir_cortesia(&evento, &invitado);
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, invitado);
+    assert_eq!(p.token.balance(&invitado), 0);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 1);
+    p.tix.emitir_cortesia(&evento, &Address::generate(&p.env));
+    // Las cortesías también respetan la capacidad.
+    assert_eq!(
+        p.tix.try_emitir_cortesia(&evento, &invitado),
+        Err(Ok(Error::Agotado))
+    );
+}
+
+#[test]
+fn con_las_ventas_pausadas_no_se_compra_ni_se_revende() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let evento = p.tix.consultar_boleto(&boleto).evento;
+    p.tix.publicar_reventa(&boleto, &vendedor, &PRECIO);
+    let comprador = con_saldo(&p, PRECIO * 2);
+
+    p.tix.pausar_ventas(&evento);
+    assert!(p.tix.ventas_pausadas(&evento));
+    assert_eq!(
+        p.tix.try_comprar(&comprador, &evento),
+        Err(Ok(Error::VentasPausadas))
+    );
+    assert_eq!(
+        p.tix.try_comprar_reventa(&boleto, &comprador),
+        Err(Ok(Error::VentasPausadas))
+    );
+    assert_eq!(
+        p.tix.try_pausar_ventas(&evento),
+        Err(Ok(Error::VentasPausadas))
+    );
+    // Los boletos vendidos siguen entrando.
+    let otro = p.tix.emitir_cortesia(&evento, &Address::generate(&p.env));
+    p.tix.registrar_entrada(&otro, &p.organizador);
+
+    p.tix.reanudar_ventas(&evento);
+    assert!(!p.tix.ventas_pausadas(&evento));
+    p.tix.comprar_reventa(&boleto, &comprador);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, comprador);
+}
+
+#[test]
+fn el_precio_solo_cambia_antes_de_la_primera_venta() {
+    let p = preparar();
+    let evento = crear(&p, 5, PRECIO);
+
+    p.tix.cambiar_precio(&evento, &300_000_000);
+    assert_eq!(p.tix.consultar_evento(&evento).precio, 300_000_000);
+    assert_eq!(
+        p.tix.try_cambiar_precio(&evento, &-1),
+        Err(Ok(Error::PrecioInvalido))
+    );
+
+    let fan = con_saldo(&p, 300_000_000);
+    p.tix.comprar(&fan, &evento);
+    assert_eq!(
+        p.tix.try_cambiar_precio(&evento, &PRECIO),
+        Err(Ok(Error::YaHayVentas))
+    );
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]
