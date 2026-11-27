@@ -14,9 +14,12 @@
 
 import { FeeBumpTransaction, Keypair, Networks, TransactionBuilder, rpc } from '@stellar/stellar-sdk'
 
+// En Mainnet el patrocinio está apagado: cada quien paga su comisión de red
+// (una fracción de centavo) y nadie puede vaciar la cuenta patrocinadora.
+const ES_MAINNET = process.env.VITE_RED === 'mainnet'
 // Mismo contrato que la app (frontend/src/stellar/config.js).
-const CONTRATO = process.env.VITE_CONTRATO_ID ?? 'CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4'
-const RPC_URL = process.env.VITE_RPC_URL ?? 'https://soroban-testnet.stellar.org'
+const CONTRATO = process.env.VITE_CONTRATO_ID || 'CDKVPZI5HC25H6ILACGF24PNTTNYMUDQBSAJGMSUKEQEFUYVSAAKKRD4'
+const RPC_URL = process.env.VITE_RPC_URL || 'https://soroban-testnet.stellar.org'
 const RED = Networks.TESTNET
 // 1 XLM: muy por encima de lo que cuesta una llamada normal al contrato.
 const COMISION_MAXIMA = 10_000_000
@@ -36,7 +39,7 @@ function esDelContrato(tx) {
 }
 
 export default async function handler(req, res) {
-  const secreta = process.env.TRUSTTIX_PATROCINADOR_SECRETA
+  const secreta = ES_MAINNET ? null : process.env.TRUSTTIX_PATROCINADOR_SECRETA
   // GET: la app pregunta si hay patrocinio, para decir "sin comisiones" solo cuando es cierto.
   if (req.method === 'GET') return res.status(200).json({ activo: Boolean(secreta) })
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa GET o POST.' })

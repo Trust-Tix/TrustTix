@@ -2,7 +2,7 @@ import { Asset, BASE_FEE, Horizon, Memo, Operation, StrKey, TransactionBuilder }
 import { FRIENDBOT_URL, HORIZON_URL, RED } from './config'
 import { firmar } from './billetera'
 
-// Operaciones de cuenta en Testnet a través de Horizon: saldo, activación,
+// Operaciones de cuenta a través de Horizon: saldo, activación (solo Testnet),
 // envío de XLM e historial de pagos.
 
 const horizon = new Horizon.Server(HORIZON_URL)
@@ -25,6 +25,9 @@ export async function saldoXLM(direccion) {
 const activaciones = new Map()
 
 export function activarConFriendbot(direccion) {
+  if (!FRIENDBOT_URL) {
+    return Promise.reject(new Error('En Mainnet tu cuenta se activa al recibir al menos 1 XLM en tu billetera.'))
+  }
   if (!activaciones.has(direccion)) {
     const pedido = (async () => {
       const r = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(direccion)}`)

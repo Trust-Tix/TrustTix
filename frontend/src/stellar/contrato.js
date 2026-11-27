@@ -1,5 +1,5 @@
 import { contract, rpc, scValToNative } from '@stellar/stellar-sdk'
-import { CONTRATO_ID, RED, RPC_URL } from './config'
+import { CONTRATO_ID, ES_MAINNET, RED, RPC_URL } from './config'
 import { firmar } from './billetera'
 
 // Llamadas al contrato TrustTix. Las consultas se simulan contra la red
@@ -55,7 +55,11 @@ function traducir(error, tx) {
     return new Error('Cancelaste la firma en tu billetera.')
   }
   if (/account not found|Account .* not found|does not exist/i.test(textos.join(' '))) {
-    return new Error('Tu billetera todavía no está activada en Testnet. Actívala con XLM de prueba en la página Billetera.')
+    return new Error(
+      ES_MAINNET
+        ? 'Tu billetera todavía no existe en Mainnet: necesita recibir al menos 1 XLM.'
+        : 'Tu billetera todavía no está activada en Testnet. Actívala con XLM de prueba en la página Billetera.',
+    )
   }
   return error instanceof Error ? error : new Error(String(error))
 }

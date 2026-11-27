@@ -7,6 +7,13 @@
 // con ?portal=app, ?portal=organizer o ?portal=staff, y se recuerda mientras la
 // pestaña siga abierta.
 
+//
+// La publicación de Mainnet (mainnet.trusttix.xyz) es un solo sitio: abre la
+// tienda y los portales de organizadores y personal se eligen con ?portal=,
+// para que nunca se salte a los subdominios de Testnet.
+
+import { ES_MAINNET } from './stellar/config'
+
 export const DOMINIO = import.meta.env.VITE_DOMINIO ?? 'trusttix.xyz'
 
 const PORTALES = ['landing', 'app', 'organizer', 'staff']
@@ -17,8 +24,8 @@ const CLAVE = 'trusttix-portal'
 
 function detectar() {
   const sub = window.location.hostname.split('.')[0]
-  if (SUBDOMINIOS.includes(sub)) return sub
-  if (sub === 'admin') return 'organizer'
+  if (!ES_MAINNET && SUBDOMINIOS.includes(sub)) return sub
+  if (!ES_MAINNET && sub === 'admin') return 'organizer'
   const crudo = new URLSearchParams(window.location.search).get('portal')
   const pedido = ANTERIORES[crudo] ?? crudo
   try {
@@ -28,7 +35,9 @@ function detectar() {
   } catch {
     // Sin almacenamiento: vale lo que diga la dirección.
   }
-  return PORTALES.includes(pedido) ? pedido : 'landing'
+  if (PORTALES.includes(pedido)) return pedido
+  // En Mainnet no hay landing propia: se abre directo la tienda.
+  return ES_MAINNET ? 'app' : 'landing'
 }
 
 export const PORTAL = detectar()
@@ -45,11 +54,11 @@ export const NOMBRE_PORTAL = {
 export function urlPortal(portal, ruta = '/') {
   const { protocol, hostname, origin } = window.location
   const base = hostname.replace(/^(app|organizer|staff|admin|www)\./, '')
-  if (base === DOMINIO) return `${protocol}//${portal === 'landing' ? '' : `${portal}.`}${base}${ruta}`
+  if (base === DOMINIO && !ES_MAINNET) return `${protocol}//${portal === 'landing' ? '' : `${portal}.`}${base}${ruta}`
   return `${origin}${ruta}?portal=${portal}`
 }
 
 // admin.trusttix.xyz era el portal de organizadores: se manda a organizer.
 export function subdominioViejo() {
-  return window.location.hostname.startsWith('admin.')
+  return !ES_MAINNET && window.location.hostname.startsWith('admin.')
 }
