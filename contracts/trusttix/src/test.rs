@@ -1434,6 +1434,214 @@ fn el_organizador_retira_a_todo_su_personal_de_una_vez() {
     );
 }
 
+#[test]
+fn comprar_preventa_para_regala_un_boleto_al_precio_especial() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let especial = 200_000_000; // 20 XLM
+    p.tix
+        .abrir_preventa(&evento, &huella_club(&p.env), &especial, &1);
+    let quien_paga = con_saldo(&p, especial);
+    let amiga = Address::generate(&p.env);
+
+    let boleto =
+        p.tix
+            .comprar_preventa_para(&quien_paga, &amiga, &evento, &texto(&p.env, "club fans"));
+    assert_eq!(p.env.auths()[0].0, quien_paga);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, amiga);
+    assert_eq!(p.tix.boletos_de(&quien_paga).len(), 0);
+    assert_eq!(p.token.balance(&quien_paga), 0);
+    assert_eq!(p.token.balance(&p.organizador), especial - 6_000_000);
+    // El regalo usó el único lugar del cupo.
+    let otra = con_saldo(&p, especial);
+    assert_eq!(
+        p.tix
+            .try_comprar_preventa_para(&otra, &amiga, &evento, &texto(&p.env, "club fans")),
+        Err(Ok(Error::PreventaAgotada))
+    );
+    assert_eq!(
+        p.tix
+            .try_comprar_preventa_para(&otra, &otra, &evento, &texto(&p.env, "club fans")),
+        Err(Ok(Error::MismoDueno))
+    );
+}
+
+#[test]
+fn la_propina_al_personal_llega_completa_y_solo_a_personal_autorizado() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let puerta = Address::generate(&p.env);
+    let extrano = Address::generate(&p.env);
+    p.tix.autorizar_personal(&evento, &puerta);
+    let fan = con_saldo(&p, 100_000_000);
+
+    p.tix.propina_personal(&fan, &evento, &puerta, &50_000_000);
+    assert_eq!(p.env.auths()[0].0, fan);
+    assert_eq!(p.token.balance(&puerta), 50_000_000);
+    assert_eq!(p.token.balance(&fan), 50_000_000);
+    assert_eq!(p.token.balance(&p.admin), 0);
+    assert_eq!(
+        p.tix
+            .try_propina_personal(&fan, &evento, &extrano, &10_000_000),
+        Err(Ok(Error::NoAutorizado))
+    );
+    assert_eq!(
+        p.tix
+            .try_propina_personal(&fan, &evento, &p.organizador, &10_000_000),
+        Err(Ok(Error::NoAutorizado))
+    );
+    assert_eq!(
+        p.tix.try_propina_personal(&fan, &evento, &puerta, &0),
+        Err(Ok(Error::PrecioInvalido))
+    );
+}
+
+#[test]
+fn retirar_ofertas_devuelve_todo_en_una_transaccion_o_nada() {
+    let p = preparar();
+    let (boleto_a, _) = boleto_para_revender(&p);
+    let (boleto_b, _) = boleto_para_revender(&p);
+    let interesado = con_saldo(&p, PRECIO * 2);
+    p.tix.ofertar(&interesado, &boleto_a, &PRECIO);
+    p.tix.ofertar(&interesado, &boleto_b, &PRECIO);
+    assert_eq!(p.token.balance(&interesado), 0);
+
+    let grupo = Vec::from_array(&p.env, [boleto_a, boleto_b]);
+    assert_eq!(p.tix.retirar_ofertas(&interesado, &grupo), PRECIO * 2);
+    assert_eq!(p.env.auths()[0].0, interesado);
+    assert_eq!(p.token.balance(&interesado), PRECIO * 2);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+
+    // Si falta una oferta, no se retira ninguna.
+    p.tix.ofertar(&interesado, &boleto_a, &PRECIO);
+    assert_eq!(
+        p.tix.try_retirar_ofertas(&interesado, &grupo),
+        Err(Ok(Error::NoHayOferta))
+    );
+    assert_eq!(p.tix.consultar_oferta(&boleto_a, &interesado), PRECIO);
+    assert_eq!(p.token.balance(&p.tix.address), PRECIO);
+}
+
+#[test]
+fn cancelar_y_reembolsar_devuelve_el_dinero_en_la_misma_transaccion() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let fan = con_saldo(&p, PRECIO * 3);
+    let boletos = p.tix.comprar_varios(&fan, &evento, &3);
+    // El organizador completa con su propio saldo la comisión que ya se cobró.
+    StellarAssetClient::new(&p.env, &p.token.address).mint(&p.organizador, &PRECIO);
+
+    let desde = boletos.get(0).unwrap();
+    let hasta = boletos.get(2).unwrap();
+    assert_eq!(p.tix.cancelar_y_reembolsar(&evento, &desde, &hasta), 3);
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert!(p.tix.consultar_evento(&evento).cancelado);
+    assert_eq!(p.token.balance(&fan), PRECIO * 3);
+    assert!(p.tix.consultar_boleto(&desde).reembolsado);
+    assert_eq!(
+        p.tix.try_cancelar_y_reembolsar(&evento, &desde, &hasta),
+        Err(Ok(Error::EventoCancelado))
+    );
+}
+
+#[test]
+fn otra_persona_liquida_el_apartado_y_el_boleto_es_de_quien_aparto() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let anticipo = PRECIO / 5;
+    let fan = con_saldo(&p, anticipo);
+    let mama = con_saldo(&p, PRECIO - anticipo);
+    p.tix.apartar_lugar(&fan, &evento);
+
+    let boleto = p.tix.completar_apartado_de(&mama, &fan, &evento);
+    assert_eq!(p.env.auths()[0].0, mama);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, fan);
+    assert_eq!(p.token.balance(&fan), 0);
+    assert_eq!(p.token.balance(&mama), 0);
+    // El organizador cobra el precio completo menos el 3 %.
+    assert_eq!(p.token.balance(&p.organizador), PRECIO - 7_500_000);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+    assert_eq!(
+        p.tix.try_completar_apartado_de(&mama, &fan, &evento),
+        Err(Ok(Error::SinApartado))
+    );
+    assert_eq!(
+        p.tix.try_completar_apartado_de(&fan, &fan, &evento),
+        Err(Ok(Error::MismoDueno))
+    );
+}
+
+#[test]
+fn comprar_con_propina_cobra_el_boleto_con_comision_y_la_propina_completa() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let propina = 50_000_000; // 5 XLM
+    let fan = con_saldo(&p, PRECIO + propina);
+
+    let boleto = p.tix.comprar_con_propina(&fan, &evento, &propina);
+    assert_eq!(p.env.auths()[0].0, fan);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, fan);
+    assert_eq!(p.token.balance(&fan), 0);
+    assert_eq!(p.token.balance(&p.admin), 7_500_000);
+    assert_eq!(
+        p.token.balance(&p.organizador),
+        PRECIO - 7_500_000 + propina
+    );
+    assert_eq!(
+        p.tix.try_comprar_con_propina(&fan, &evento, &0),
+        Err(Ok(Error::PrecioInvalido))
+    );
+}
+
+#[test]
+fn el_organizador_compensa_al_dueno_sin_invalidar_el_boleto() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let compensacion = 50_000_000;
+
+    p.tix.compensar(&boleto, &compensacion);
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert_eq!(p.token.balance(&dueno), compensacion);
+    let datos = p.tix.consultar_boleto(&boleto);
+    assert!(!datos.reembolsado && !datos.usado);
+    assert_eq!(
+        p.tix.try_compensar(&boleto, &(PRECIO + 1)),
+        Err(Ok(Error::PrecioInvalido))
+    );
+    assert_eq!(
+        p.tix.try_compensar(&boleto, &0),
+        Err(Ok(Error::PrecioInvalido))
+    );
+}
+
+#[test]
+fn comprar_reventa_para_paga_el_comprador_y_el_boleto_es_del_invitado() {
+    let p = preparar();
+    let (boleto, vendedor) = boleto_para_revender(&p);
+    let reventa = 270_000_000;
+    p.tix.publicar_reventa(&boleto, &vendedor, &reventa);
+    let quien_paga = con_saldo(&p, reventa);
+    let amigo = Address::generate(&p.env);
+
+    p.tix.comprar_reventa_para(&boleto, &quien_paga, &amigo);
+    assert_eq!(p.env.auths()[0].0, quien_paga);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, amigo);
+    assert_eq!(p.tix.boletos_de(&amigo).len(), 1);
+    assert_eq!(p.tix.boletos_de(&quien_paga).len(), 0);
+    assert_eq!(p.token.balance(&quien_paga), 0);
+    assert_eq!(p.token.balance(&vendedor), reventa - 5_400_000);
+    assert_eq!(
+        p.tix
+            .try_comprar_reventa_para(&boleto, &quien_paga, &quien_paga),
+        Err(Ok(Error::MismoDueno))
+    );
+    assert_eq!(
+        p.tix
+            .try_comprar_reventa_para(&boleto, &quien_paga, &vendedor),
+        Err(Ok(Error::NoEnReventa))
+    );
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]

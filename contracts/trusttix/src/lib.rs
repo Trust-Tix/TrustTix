@@ -329,6 +329,23 @@ pub struct Propina {
 }
 
 #[contractevent]
+pub struct Compensacion {
+    #[topic]
+    pub boleto: u32,
+    pub dueno: Address,
+    pub monto: i128,
+}
+
+#[contractevent]
+pub struct PropinaPersonal {
+    #[topic]
+    pub evento: u32,
+    pub de: Address,
+    pub personal: Address,
+    pub monto: i128,
+}
+
+#[contractevent]
 pub struct LugarApartado {
     #[topic]
     pub evento: u32,
@@ -812,20 +829,31 @@ impl TrustTix {
         if !evento.cancelado {
             return Err(Error::EventoActivo);
         }
-        if desde == 0 || hasta < desde || hasta - desde >= LOTE_MAXIMO {
-            return Err(Error::CantidadInvalida);
-        }
+        reembolsar_rango(&env, &evento, evento_id, desde, hasta)
+    }
 
-        let mut reembolsados = 0;
-        for boleto_id in desde..=hasta {
-            if let Ok(mut boleto) = leer_boleto(&env, boleto_id) {
-                if boleto.evento == evento_id && !boleto.usado && !boleto.reembolsado {
-                    devolver_precio(&env, &evento, boleto_id, &mut boleto);
-                    reembolsados += 1;
-                }
-            }
+    /// El organizador cancela su evento y en la misma transacción devuelve el
+    /// precio de los boletos entre `desde` y `hasta` (hasta 10). Para eventos
+    /// chicos, nadie se queda esperando su dinero. Devuelve cuántos reembolsó.
+    pub fn cancelar_y_reembolsar(
+        env: Env,
+        evento_id: u32,
+        desde: u32,
+        hasta: u32,
+    ) -> Result<u32, Error> {
+        let mut evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
         }
-        Ok(reembolsados)
+        evento.cancelado = true;
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+        Cancelacion {
+            evento: evento_id,
+            vendidos: evento.vendidos,
+        }
+        .publish(&env);
+        reembolsar_rango(&env, &evento, evento_id, desde, hasta)
     }
 
     /// El organizador retira la autorización de una cuenta.
@@ -1172,6 +1200,36 @@ impl TrustTix {
         Ok(precio)
     }
 
+    /// Quien ofertó por varios boletos (hasta 10) recupera todo su dinero en
+    /// garantía en una sola transacción. Si alguna oferta no existe, no se
+    /// retira ninguna. Devuelve el total devuelto.
+    pub fn retirar_ofertas(env: Env, comprador: Address, boletos: Vec<u32>) -> Result<i128, Error> {
+        comprador.require_auth();
+        validar_grupo(&boletos)?;
+        let mut total = 0;
+        for boleto_id in boletos.iter() {
+            let clave = Clave::Oferta(boleto_id, comprador.clone());
+            let precio: i128 = env
+                .storage()
+                .persistent()
+                .get(&clave)
+                .ok_or(Error::NoHayOferta)?;
+            env.storage().persistent().remove(&clave);
+            total += precio;
+            OfertaRetirada {
+                boleto: boleto_id,
+                comprador: comprador.clone(),
+            }
+            .publish(&env);
+        }
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &env.current_contract_address(),
+            &comprador,
+            &total,
+        );
+        Ok(total)
+    }
+
     /// El dueño del boleto rechaza una oferta: el dinero en garantía regresa
     /// completo a quien ofertó y la oferta desaparece. Devuelve el monto.
     pub fn rechazar_oferta(
@@ -1273,14 +1331,41 @@ impl TrustTix {
     /// TrustTix y cambia el dueño, todo en la misma transacción.
     pub fn comprar_reventa(env: Env, boleto_id: u32, comprador: Address) -> Result<(), Error> {
         comprador.require_auth();
-        comprar_de_reventa(&env, boleto_id, &comprador)
+        comprar_de_reventa(&env, boleto_id, &comprador, &comprador)
+    }
+
+    /// Compra un boleto en reventa de regalo: paga `comprador`, con las
+    /// mismas reglas de tope, comisión y regalía, y el boleto pasa directo a
+    /// `para`.
+    pub fn comprar_reventa_para(
+        env: Env,
+        boleto_id: u32,
+        comprador: Address,
+        para: Address,
+    ) -> Result<(), Error> {
+        comprador.require_auth();
+        if comprador == para {
+            return Err(Error::MismoDueno);
+        }
+        comprar_de_reventa(&env, boleto_id, &comprador, &para)?;
+        Regalo {
+            boleto: boleto_id,
+            de: comprador,
+            para,
+        }
+        .publish(&env);
+        Ok(())
     }
 
     /// Compra varios boletos en reventa (hasta 10) con una sola firma, por
     /// ejemplo para juntar los lugares de un grupo. Cada vendedor recibe su
     /// pago con las mismas reglas de una reventa. Si uno falla, no se compra
     /// ninguno. Devuelve el total pagado.
-    pub fn comprar_reventas(env: Env, comprador: Address, boletos: Vec<u32>) -> Result<i128, Error> {
+    pub fn comprar_reventas(
+        env: Env,
+        comprador: Address,
+        boletos: Vec<u32>,
+    ) -> Result<i128, Error> {
         comprador.require_auth();
         validar_grupo(&boletos)?;
         let mut total = 0;
@@ -1290,7 +1375,7 @@ impl TrustTix {
                 .persistent()
                 .get::<_, i128>(&Clave::Reventa(boleto_id))
                 .ok_or(Error::NoEnReventa)?;
-            comprar_de_reventa(&env, boleto_id, &comprador)?;
+            comprar_de_reventa(&env, boleto_id, &comprador, &comprador)?;
         }
         Ok(total)
     }
@@ -1385,52 +1470,22 @@ impl TrustTix {
     /// organizador cobra el precio completo menos la comisión de TrustTix.
     pub fn completar_apartado(env: Env, comprador: Address, evento_id: u32) -> Result<u32, Error> {
         comprador.require_auth();
-        let clave = Clave::Apartado(evento_id, comprador.clone());
-        let apartado: Apartado = env
-            .storage()
-            .persistent()
-            .get(&clave)
-            .ok_or(Error::SinApartado)?;
-        if env.ledger().timestamp() > apartado.vence {
-            return Err(Error::ApartadoVencido);
-        }
-        let evento = leer_evento(&env, evento_id)?;
-        if evento.cancelado {
-            return Err(Error::EventoCancelado);
-        }
+        liquidar_apartado(&env, &comprador, &comprador, evento_id)
+    }
 
-        let puntos = comisiones(&env).compra;
-        let comision = cobrar(
-            &env,
-            &env.current_contract_address(),
-            &evento.organizador,
-            apartado.anticipo,
-            puntos,
-        ) + cobrar(
-            &env,
-            &comprador,
-            &evento.organizador,
-            evento.precio - apartado.anticipo,
-            puntos,
-        );
-        env.storage().persistent().remove(&clave);
-        let id = crear_boleto(&env, evento_id, &comprador);
-
-        Compra {
-            evento: evento_id,
-            boleto: id,
-            comprador: comprador.clone(),
-            precio: evento.precio,
-            comision,
+    /// Alguien más (un familiar, un amigo) liquida el apartado de otra
+    /// persona: paga el resto y el boleto queda a nombre de quien apartó.
+    pub fn completar_apartado_de(
+        env: Env,
+        pagador: Address,
+        comprador: Address,
+        evento_id: u32,
+    ) -> Result<u32, Error> {
+        pagador.require_auth();
+        if pagador == comprador {
+            return Err(Error::MismoDueno);
         }
-        .publish(&env);
-        ApartadoCompletado {
-            evento: evento_id,
-            comprador,
-            boleto: id,
-        }
-        .publish(&env);
-        Ok(id)
+        liquidar_apartado(&env, &pagador, &comprador, evento_id)
     }
 
     /// Libera un apartado y el lugar vuelve a la venta. Antes de que venza
@@ -1529,36 +1584,28 @@ impl TrustTix {
         codigo: String,
     ) -> Result<u32, Error> {
         comprador.require_auth();
-        let mut preventa: Preventa = env
-            .storage()
-            .persistent()
-            .get(&Clave::Preventa(evento_id))
-            .ok_or(Error::SinPreventa)?;
-        if huella(&env, &codigo) != Some(preventa.codigo.clone()) {
-            return Err(Error::CodigoIncorrecto);
-        }
-        if preventa.vendidos >= preventa.cupo {
-            return Err(Error::PreventaAgotada);
-        }
-        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
-        let comision = cobrar(
-            &env,
-            &comprador,
-            &evento.organizador,
-            preventa.precio,
-            comisiones(&env).compra,
-        );
-        let id = emitir(&env, evento_id, &mut evento, &comprador);
-        guardar(&env, &Clave::Evento(evento_id), &evento);
-        preventa.vendidos += 1;
-        guardar(&env, &Clave::Preventa(evento_id), &preventa);
+        vender_preventa(&env, &comprador, &comprador, evento_id, &codigo)
+    }
 
-        Compra {
-            evento: evento_id,
+    /// Compra con el código de preventa un boleto de regalo: paga `comprador`
+    /// al precio especial y el boleto queda desde el inicio a nombre de `para`.
+    /// Usa un lugar del cupo y cuenta en el límite de quien paga.
+    pub fn comprar_preventa_para(
+        env: Env,
+        comprador: Address,
+        para: Address,
+        evento_id: u32,
+        codigo: String,
+    ) -> Result<u32, Error> {
+        comprador.require_auth();
+        if comprador == para {
+            return Err(Error::MismoDueno);
+        }
+        let id = vender_preventa(&env, &comprador, &para, evento_id, &codigo)?;
+        Regalo {
             boleto: id,
-            comprador,
-            precio: preventa.precio,
-            comision,
+            de: comprador,
+            para,
         }
         .publish(&env);
         Ok(id)
@@ -1626,6 +1673,111 @@ impl TrustTix {
         Propina {
             evento: evento_id,
             de,
+            monto,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Compra un boleto y deja una propina para el artista en la misma
+    /// transacción. El boleto se cobra con su comisión normal; la propina
+    /// llega completa al organizador. Devuelve el número de boleto.
+    pub fn comprar_con_propina(
+        env: Env,
+        comprador: Address,
+        evento_id: u32,
+        propina: i128,
+    ) -> Result<u32, Error> {
+        comprador.require_auth();
+        if propina <= 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        let mut evento = preparar_compra(&env, &comprador, evento_id, 1)?;
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            evento.precio,
+            comisiones(&env).compra,
+        );
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &comprador,
+            &evento.organizador,
+            &propina,
+        );
+        let id = emitir(&env, evento_id, &mut evento, &comprador);
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+
+        Compra {
+            evento: evento_id,
+            boleto: id,
+            comprador: comprador.clone(),
+            precio: evento.precio,
+            comision,
+        }
+        .publish(&env);
+        Propina {
+            evento: evento_id,
+            de: comprador,
+            monto: propina,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    /// El organizador compensa al dueño actual de un boleto (por ejemplo, si
+    /// cambió el recinto o el horario) con una parte del precio, sin cancelar
+    /// el evento: el boleto sigue válido. No puede pasar del precio original.
+    pub fn compensar(env: Env, boleto_id: u32, monto: i128) -> Result<(), Error> {
+        let boleto = leer_boleto(&env, boleto_id)?;
+        let evento = leer_evento(&env, boleto.evento)?;
+        evento.organizador.require_auth();
+        if boleto.reembolsado {
+            return Err(Error::YaReembolsado);
+        }
+        if monto <= 0 || monto > evento.precio {
+            return Err(Error::PrecioInvalido);
+        }
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &evento.organizador,
+            &boleto.dueno,
+            &monto,
+        );
+        Compensacion {
+            boleto: boleto_id,
+            dueno: boleto.dueno,
+            monto,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    /// Propina para alguien del personal del evento (la puerta, la barra):
+    /// llega completa a su cuenta, sin comisión. Solo se puede dar a una cuenta
+    /// que el organizador autorizó en ese evento.
+    pub fn propina_personal(
+        env: Env,
+        de: Address,
+        evento_id: u32,
+        personal: Address,
+        monto: i128,
+    ) -> Result<(), Error> {
+        de.require_auth();
+        let evento = leer_evento(&env, evento_id)?;
+        if evento.cancelado {
+            return Err(Error::EventoCancelado);
+        }
+        if monto <= 0 {
+            return Err(Error::PrecioInvalido);
+        }
+        if personal == evento.organizador || !es_autorizado(&env, evento_id, &personal)? {
+            return Err(Error::NoAutorizado);
+        }
+        token::Client::new(&env, &token_de_pago(&env)).transfer(&de, &personal, &monto);
+        PropinaPersonal {
+            evento: evento_id,
+            de,
+            personal,
             monto,
         }
         .publish(&env);
@@ -1862,9 +2014,139 @@ fn ventas_pausadas(env: &Env, evento_id: u32) -> bool {
     env.storage().persistent().has(&Clave::Pausa(evento_id))
 }
 
-/// Compra un boleto en reventa para `comprador` (quien llama ya revisó su
-/// firma): paga al vendedor, separa comisión y regalía y cambia el dueño.
-fn comprar_de_reventa(env: &Env, boleto_id: u32, comprador: &Address) -> Result<(), Error> {
+/// Reembolsa los boletos del evento cancelado entre `desde` y `hasta` (hasta
+/// 10). Se saltan los de otros eventos, los ya reembolsados y los que ya
+/// entraron. Quien llama ya revisó la firma del organizador.
+/// Liquida el apartado de `comprador`: el anticipo pasa al organizador, el
+/// resto lo paga `pagador` y el boleto queda a nombre de `comprador`.
+fn liquidar_apartado(
+    env: &Env,
+    pagador: &Address,
+    comprador: &Address,
+    evento_id: u32,
+) -> Result<u32, Error> {
+    let clave = Clave::Apartado(evento_id, comprador.clone());
+    let apartado: Apartado = env
+        .storage()
+        .persistent()
+        .get(&clave)
+        .ok_or(Error::SinApartado)?;
+    if env.ledger().timestamp() > apartado.vence {
+        return Err(Error::ApartadoVencido);
+    }
+    let evento = leer_evento(env, evento_id)?;
+    if evento.cancelado {
+        return Err(Error::EventoCancelado);
+    }
+
+    let puntos = comisiones(env).compra;
+    let comision = cobrar(
+        env,
+        &env.current_contract_address(),
+        &evento.organizador,
+        apartado.anticipo,
+        puntos,
+    ) + cobrar(
+        env,
+        pagador,
+        &evento.organizador,
+        evento.precio - apartado.anticipo,
+        puntos,
+    );
+    env.storage().persistent().remove(&clave);
+    let id = crear_boleto(env, evento_id, comprador);
+
+    Compra {
+        evento: evento_id,
+        boleto: id,
+        comprador: comprador.clone(),
+        precio: evento.precio,
+        comision,
+    }
+    .publish(env);
+    ApartadoCompletado {
+        evento: evento_id,
+        comprador: comprador.clone(),
+        boleto: id,
+    }
+    .publish(env);
+    Ok(id)
+}
+
+fn reembolsar_rango(
+    env: &Env,
+    evento: &Evento,
+    evento_id: u32,
+    desde: u32,
+    hasta: u32,
+) -> Result<u32, Error> {
+    if desde == 0 || hasta < desde || hasta - desde >= LOTE_MAXIMO {
+        return Err(Error::CantidadInvalida);
+    }
+    let mut reembolsados = 0;
+    for boleto_id in desde..=hasta {
+        if let Ok(mut boleto) = leer_boleto(env, boleto_id) {
+            if boleto.evento == evento_id && !boleto.usado && !boleto.reembolsado {
+                devolver_precio(env, evento, boleto_id, &mut boleto);
+                reembolsados += 1;
+            }
+        }
+    }
+    Ok(reembolsados)
+}
+
+/// Vende un boleto de preventa: cobra a `comprador` el precio especial y
+/// emite el boleto a nombre de `dueno`. Quien llama ya revisó la firma.
+fn vender_preventa(
+    env: &Env,
+    comprador: &Address,
+    dueno: &Address,
+    evento_id: u32,
+    codigo: &String,
+) -> Result<u32, Error> {
+    let mut preventa: Preventa = env
+        .storage()
+        .persistent()
+        .get(&Clave::Preventa(evento_id))
+        .ok_or(Error::SinPreventa)?;
+    if huella(env, codigo) != Some(preventa.codigo.clone()) {
+        return Err(Error::CodigoIncorrecto);
+    }
+    if preventa.vendidos >= preventa.cupo {
+        return Err(Error::PreventaAgotada);
+    }
+    let mut evento = preparar_compra(env, comprador, evento_id, 1)?;
+    let comision = cobrar(
+        env,
+        comprador,
+        &evento.organizador,
+        preventa.precio,
+        comisiones(env).compra,
+    );
+    let id = emitir(env, evento_id, &mut evento, dueno);
+    guardar(env, &Clave::Evento(evento_id), &evento);
+    preventa.vendidos += 1;
+    guardar(env, &Clave::Preventa(evento_id), &preventa);
+
+    Compra {
+        evento: evento_id,
+        boleto: id,
+        comprador: comprador.clone(),
+        precio: preventa.precio,
+        comision,
+    }
+    .publish(env);
+    Ok(id)
+}
+
+/// Compra un boleto en reventa: paga `pagador` (quien llama ya revisó su
+/// firma), se separan comisión y regalía, y el boleto pasa a `comprador`.
+fn comprar_de_reventa(
+    env: &Env,
+    boleto_id: u32,
+    pagador: &Address,
+    comprador: &Address,
+) -> Result<(), Error> {
     let mut boleto = leer_boleto(env, boleto_id)?;
     let precio: i128 = env
         .storage()
@@ -1892,7 +2174,7 @@ fn comprar_de_reventa(env: &Env, boleto_id: u32, comprador: &Address) -> Result<
 
     let (comision, regalia) = pagar_reventa(
         env,
-        comprador,
+        pagador,
         &vendedor,
         boleto.evento,
         &evento.organizador,
