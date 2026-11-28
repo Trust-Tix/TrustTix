@@ -1301,6 +1301,139 @@ fn la_propina_llega_completa_al_organizador() {
     );
 }
 
+// ---------- Grupos y ofertas, segunda parte ----------
+
+#[test]
+fn comprar_reventas_paga_a_cada_vendedor_y_junta_los_boletos() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let vendedor_a = con_saldo(&p, PRECIO);
+    let vendedor_b = con_saldo(&p, PRECIO);
+    let boleto_a = p.tix.comprar(&vendedor_a, &evento);
+    let boleto_b = p.tix.comprar(&vendedor_b, &evento);
+    p.tix.publicar_reventa(&boleto_a, &vendedor_a, &270_000_000);
+    p.tix.publicar_reventa(&boleto_b, &vendedor_b, &260_000_000);
+    let grupo = con_saldo(&p, 530_000_000);
+
+    let total = p
+        .tix
+        .comprar_reventas(&grupo, &Vec::from_array(&p.env, [boleto_a, boleto_b]));
+    assert_eq!(p.env.auths()[0].0, grupo);
+    assert_eq!(total, 530_000_000);
+    // Cada vendedor recibe su precio menos el 2 % de TrustTix.
+    assert_eq!(p.token.balance(&vendedor_a), 270_000_000 - 5_400_000);
+    assert_eq!(p.token.balance(&vendedor_b), 260_000_000 - 5_200_000);
+    assert_eq!(p.token.balance(&grupo), 0);
+    assert_eq!(p.tix.consultar_boleto(&boleto_a).dueno, grupo);
+    assert_eq!(p.tix.consultar_boleto(&boleto_b).dueno, grupo);
+    assert_eq!(p.tix.boletos_de(&grupo).len(), 2);
+
+    // Si un boleto del grupo no está en reventa, no se compra ninguno.
+    let vendedor_c = con_saldo(&p, PRECIO);
+    let boleto_c = p.tix.comprar(&vendedor_c, &evento);
+    p.tix.publicar_reventa(&boleto_c, &vendedor_c, &PRECIO);
+    let otro = con_saldo(&p, PRECIO * 2);
+    assert_eq!(
+        p.tix
+            .try_comprar_reventas(&otro, &Vec::from_array(&p.env, [boleto_c, boleto_a])),
+        Err(Ok(Error::NoEnReventa))
+    );
+    assert_eq!(p.tix.consultar_boleto(&boleto_c).dueno, vendedor_c);
+    assert_eq!(p.token.balance(&otro), PRECIO * 2);
+    assert_eq!(
+        p.tix.try_comprar_reventas(&otro, &Vec::new(&p.env)),
+        Err(Ok(Error::CantidadInvalida))
+    );
+}
+
+#[test]
+fn comprar_para_varios_cobra_una_vez_y_cada_invitado_recibe_su_boleto() {
+    let p = preparar();
+    let evento = crear(&p, 10, PRECIO);
+    let quien_paga = con_saldo(&p, PRECIO * 3);
+    let ana = Address::generate(&p.env);
+    let luis = Address::generate(&p.env);
+    let sofi = Address::generate(&p.env);
+
+    let boletos = p.tix.comprar_para_varios(
+        &quien_paga,
+        &Vec::from_array(&p.env, [ana.clone(), luis.clone(), sofi.clone()]),
+        &evento,
+    );
+    assert_eq!(p.env.auths()[0].0, quien_paga);
+    assert_eq!(boletos.len(), 3);
+    assert_eq!(p.tix.consultar_boleto(&boletos.get(0).unwrap()).dueno, ana);
+    assert_eq!(p.tix.consultar_boleto(&boletos.get(1).unwrap()).dueno, luis);
+    assert_eq!(p.tix.consultar_boleto(&boletos.get(2).unwrap()).dueno, sofi);
+    assert_eq!(p.tix.boletos_de(&quien_paga).len(), 0);
+    assert_eq!(p.tix.consultar_evento(&evento).vendidos, 3);
+    // Un solo cobro: 75 XLM, 3 % para TrustTix y el resto para el organizador.
+    assert_eq!(p.token.balance(&quien_paga), 0);
+    assert_eq!(p.token.balance(&p.organizador), PRECIO * 3 - 22_500_000);
+    assert_eq!(
+        p.tix
+            .try_comprar_para_varios(&quien_paga, &Vec::new(&p.env), &evento),
+        Err(Ok(Error::CantidadInvalida))
+    );
+}
+
+#[test]
+fn el_dueno_rechaza_una_oferta_y_el_dinero_regresa_completo() {
+    let p = preparar();
+    let (boleto, dueno) = boleto_para_revender(&p);
+    let interesado = con_saldo(&p, PRECIO);
+    let extrano = Address::generate(&p.env);
+    p.tix.ofertar(&interesado, &boleto, &PRECIO);
+    assert_eq!(p.token.balance(&p.tix.address), PRECIO);
+
+    // Solo el dueño rechaza.
+    assert_eq!(
+        p.tix.try_rechazar_oferta(&boleto, &extrano, &interesado),
+        Err(Ok(Error::NoEsDueno))
+    );
+    assert_eq!(p.tix.rechazar_oferta(&boleto, &dueno, &interesado), PRECIO);
+    assert_eq!(p.env.auths()[0].0, dueno);
+    assert_eq!(p.token.balance(&interesado), PRECIO);
+    assert_eq!(p.token.balance(&p.tix.address), 0);
+    assert_eq!(p.tix.consultar_boleto(&boleto).dueno, dueno);
+    assert_eq!(
+        p.tix.try_rechazar_oferta(&boleto, &dueno, &interesado),
+        Err(Ok(Error::NoHayOferta))
+    );
+}
+
+#[test]
+fn el_organizador_retira_a_todo_su_personal_de_una_vez() {
+    let p = preparar();
+    let evento = crear(&p, 10, 0);
+    let a = Address::generate(&p.env);
+    let b = Address::generate(&p.env);
+    let sin_permiso = Address::generate(&p.env);
+    p.tix
+        .autorizar_personal_varios(&evento, &Vec::from_array(&p.env, [a.clone(), b.clone()]));
+
+    let quitadas = p.tix.quitar_personal_varios(
+        &evento,
+        &Vec::from_array(&p.env, [a.clone(), b.clone(), sin_permiso]),
+    );
+    assert_eq!(p.env.auths()[0].0, p.organizador);
+    assert_eq!(quitadas, 2);
+    assert!(!p.tix.es_personal(&evento, &a));
+    assert!(!p.tix.es_personal(&evento, &b));
+
+    // Sin permiso ya no registran entradas.
+    let fan = Address::generate(&p.env);
+    let boleto = p.tix.comprar(&fan, &evento);
+    assert_eq!(
+        p.tix.try_registrar_entrada(&boleto, &a),
+        Err(Ok(Error::NoAutorizado))
+    );
+    assert_eq!(
+        p.tix.try_quitar_personal_varios(&evento, &Vec::new(&p.env)),
+        Err(Ok(Error::CantidadInvalida))
+    );
+}
+
 // ---------- Actualizar el código ----------
 
 #[test]

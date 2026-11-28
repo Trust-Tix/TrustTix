@@ -684,6 +684,30 @@ impl TrustTix {
         Ok(())
     }
 
+    /// Al terminar el evento, el organizador retira de una vez a todo su
+    /// personal (hasta 10 cuentas): desde ese momento ya no registran
+    /// entradas. Devuelve cuántas cuentas tenían permiso y lo perdieron.
+    pub fn quitar_personal_varios(
+        env: Env,
+        evento_id: u32,
+        cuentas: Vec<Address>,
+    ) -> Result<u32, Error> {
+        let evento = leer_evento(&env, evento_id)?;
+        evento.organizador.require_auth();
+        if cuentas.is_empty() || cuentas.len() > LIMITE_POR_CUENTA {
+            return Err(Error::CantidadInvalida);
+        }
+        let mut quitadas = 0;
+        for cuenta in cuentas.iter() {
+            let clave = Clave::Personal(evento_id, cuenta);
+            if env.storage().persistent().has(&clave) {
+                env.storage().persistent().remove(&clave);
+                quitadas += 1;
+            }
+        }
+        Ok(quitadas)
+    }
+
     /// El organizador regala cortesías a varias personas (hasta 10) con una
     /// sola firma. Todas caben en la capacidad o no se emite ninguna.
     pub fn emitir_cortesias(
@@ -923,6 +947,56 @@ impl TrustTix {
         Ok(id)
     }
 
+    /// Compra un boleto para cada persona de un grupo (hasta 10) en una sola
+    /// transacción: un cobro por el total a `comprador` y cada boleto queda
+    /// desde el inicio a nombre de su invitado. Cuentan en el límite de quien paga.
+    pub fn comprar_para_varios(
+        env: Env,
+        comprador: Address,
+        para: Vec<Address>,
+        evento_id: u32,
+    ) -> Result<Vec<u32>, Error> {
+        comprador.require_auth();
+        if para.is_empty() || para.len() > LIMITE_POR_CUENTA {
+            return Err(Error::CantidadInvalida);
+        }
+        let cantidad = para.len();
+        let mut evento = preparar_compra(&env, &comprador, evento_id, cantidad)?;
+        let total = evento.precio * cantidad as i128;
+        let comision = cobrar(
+            &env,
+            &comprador,
+            &evento.organizador,
+            total,
+            comisiones(&env).compra,
+        );
+
+        let mut boletos = Vec::new(&env);
+        for invitado in para.iter() {
+            let id = emitir(&env, evento_id, &mut evento, &invitado);
+            boletos.push_back(id);
+            if invitado != comprador {
+                Regalo {
+                    boleto: id,
+                    de: comprador.clone(),
+                    para: invitado,
+                }
+                .publish(&env);
+            }
+        }
+        guardar(&env, &Clave::Evento(evento_id), &evento);
+
+        CompraVarios {
+            evento: evento_id,
+            comprador,
+            boletos: boletos.clone(),
+            total,
+            comision,
+        }
+        .publish(&env);
+        Ok(boletos)
+    }
+
     /// Solo el dueño actual puede transferir, y nunca un boleto ya usado.
     pub fn transferir(env: Env, boleto_id: u32, de: Address, a: Address) -> Result<(), Error> {
         de.require_auth();
@@ -1098,6 +1172,39 @@ impl TrustTix {
         Ok(precio)
     }
 
+    /// El dueño del boleto rechaza una oferta: el dinero en garantía regresa
+    /// completo a quien ofertó y la oferta desaparece. Devuelve el monto.
+    pub fn rechazar_oferta(
+        env: Env,
+        boleto_id: u32,
+        dueno: Address,
+        comprador: Address,
+    ) -> Result<i128, Error> {
+        dueno.require_auth();
+        let boleto = leer_boleto(&env, boleto_id)?;
+        if boleto.dueno != dueno {
+            return Err(Error::NoEsDueno);
+        }
+        let clave = Clave::Oferta(boleto_id, comprador.clone());
+        let precio: i128 = env
+            .storage()
+            .persistent()
+            .get(&clave)
+            .ok_or(Error::NoHayOferta)?;
+        env.storage().persistent().remove(&clave);
+        token::Client::new(&env, &token_de_pago(&env)).transfer(
+            &env.current_contract_address(),
+            &comprador,
+            &precio,
+        );
+        OfertaRetirada {
+            boleto: boleto_id,
+            comprador,
+        }
+        .publish(&env);
+        Ok(precio)
+    }
+
     /// Monto que `comprador` tiene ofertado por un boleto.
     pub fn consultar_oferta(env: Env, boleto_id: u32, comprador: Address) -> Result<i128, Error> {
         env.storage()
@@ -1166,58 +1273,26 @@ impl TrustTix {
     /// TrustTix y cambia el dueño, todo en la misma transacción.
     pub fn comprar_reventa(env: Env, boleto_id: u32, comprador: Address) -> Result<(), Error> {
         comprador.require_auth();
-        let mut boleto = leer_boleto(&env, boleto_id)?;
-        let precio: i128 = env
-            .storage()
-            .persistent()
-            .get(&Clave::Reventa(boleto_id))
-            .ok_or(Error::NoEnReventa)?;
-        if boleto.usado {
-            return Err(Error::YaUsado);
-        }
-        let evento = leer_evento(&env, boleto.evento)?;
-        if evento.cancelado {
-            return Err(Error::EventoCancelado);
-        }
-        if ventas_pausadas(&env, boleto.evento) {
-            return Err(Error::VentasPausadas);
-        }
-        // Si el organizador bajó el tope después de publicarse, la oferta ya no vale.
-        if precio > precio_maximo(&evento) {
-            return Err(Error::SobreTope);
-        }
-        let vendedor = boleto.dueno.clone();
-        if vendedor == comprador {
-            return Err(Error::MismoDueno);
-        }
+        comprar_de_reventa(&env, boleto_id, &comprador)
+    }
 
-        let (comision, regalia) = pagar_reventa(
-            &env,
-            &comprador,
-            &vendedor,
-            boleto.evento,
-            &evento.organizador,
-            precio,
-        );
-
-        boleto.dueno = comprador.clone();
-        guardar(&env, &Clave::Boleto(boleto_id), &boleto);
-        quitar_de(&env, &vendedor, boleto_id);
-        agregar_a(&env, &comprador, boleto_id);
-        env.storage()
-            .persistent()
-            .remove(&Clave::Reventa(boleto_id));
-
-        Reventa {
-            boleto: boleto_id,
-            vendedor,
-            comprador,
-            precio,
-            comision,
-            regalia,
+    /// Compra varios boletos en reventa (hasta 10) con una sola firma, por
+    /// ejemplo para juntar los lugares de un grupo. Cada vendedor recibe su
+    /// pago con las mismas reglas de una reventa. Si uno falla, no se compra
+    /// ninguno. Devuelve el total pagado.
+    pub fn comprar_reventas(env: Env, comprador: Address, boletos: Vec<u32>) -> Result<i128, Error> {
+        comprador.require_auth();
+        validar_grupo(&boletos)?;
+        let mut total = 0;
+        for boleto_id in boletos.iter() {
+            total += env
+                .storage()
+                .persistent()
+                .get::<_, i128>(&Clave::Reventa(boleto_id))
+                .ok_or(Error::NoEnReventa)?;
+            comprar_de_reventa(&env, boleto_id, &comprador)?;
         }
-        .publish(&env);
-        Ok(())
+        Ok(total)
     }
 
     /// El organizador fija qué parte de cada reventa de su evento recibe él,
@@ -1785,6 +1860,63 @@ fn pagar_reventa(
 
 fn ventas_pausadas(env: &Env, evento_id: u32) -> bool {
     env.storage().persistent().has(&Clave::Pausa(evento_id))
+}
+
+/// Compra un boleto en reventa para `comprador` (quien llama ya revisó su
+/// firma): paga al vendedor, separa comisión y regalía y cambia el dueño.
+fn comprar_de_reventa(env: &Env, boleto_id: u32, comprador: &Address) -> Result<(), Error> {
+    let mut boleto = leer_boleto(env, boleto_id)?;
+    let precio: i128 = env
+        .storage()
+        .persistent()
+        .get(&Clave::Reventa(boleto_id))
+        .ok_or(Error::NoEnReventa)?;
+    if boleto.usado {
+        return Err(Error::YaUsado);
+    }
+    let evento = leer_evento(env, boleto.evento)?;
+    if evento.cancelado {
+        return Err(Error::EventoCancelado);
+    }
+    if ventas_pausadas(env, boleto.evento) {
+        return Err(Error::VentasPausadas);
+    }
+    // Si el organizador bajó el tope después de publicarse, la oferta ya no vale.
+    if precio > precio_maximo(&evento) {
+        return Err(Error::SobreTope);
+    }
+    let vendedor = boleto.dueno.clone();
+    if vendedor == *comprador {
+        return Err(Error::MismoDueno);
+    }
+
+    let (comision, regalia) = pagar_reventa(
+        env,
+        comprador,
+        &vendedor,
+        boleto.evento,
+        &evento.organizador,
+        precio,
+    );
+
+    boleto.dueno = comprador.clone();
+    guardar(env, &Clave::Boleto(boleto_id), &boleto);
+    quitar_de(env, &vendedor, boleto_id);
+    agregar_a(env, comprador, boleto_id);
+    env.storage()
+        .persistent()
+        .remove(&Clave::Reventa(boleto_id));
+
+    Reventa {
+        boleto: boleto_id,
+        vendedor,
+        comprador: comprador.clone(),
+        precio,
+        comision,
+        regalia,
+    }
+    .publish(env);
+    Ok(())
 }
 
 /// Revisa que `comprador` pueda pagar `cantidad` boletos más del evento: que no
